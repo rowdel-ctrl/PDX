@@ -5,6 +5,7 @@ import type { Frame, FrameBorder, Page, PageImage, PageText, Unit } from './type
 import { FULL, variantUrl } from './images';
 import { borderRect, cropMarkSegments, frameCrop } from './layout';
 import { fmt } from './units';
+import { idsInRect } from './arrange';
 import type { Face } from './vision';
 
 const SNAP_PX = 8;
@@ -222,6 +223,7 @@ export default function PageCanvas(p: {
   page: Page; pageNo: number; pageNumbers: boolean; unit: Unit; selectedIds: string[];
   onPick: (id: string, how: 'tap' | 'drag') => void; onBlank: () => void;
   onMoveMany: (moves: { id: string; x: number; y: number }[]) => void;
+  marquee?: boolean; onMarquee?: (ids: string[]) => void;
   onScaleMany: (f: number, ox: number, oy: number, nx: number, ny: number) => void;
   onChange: (imgId: string, patch: Partial<PageImage>) => void;
   onChangeText: (id: string, patch: Partial<PageText>) => void;
@@ -242,6 +244,8 @@ export default function PageCanvas(p: {
   const [zoom, setZoom] = useState(1);
   const [guides, setGuides] = useState<Guides>({ v: [], h: [] });
   const [hud, setHud] = useState('');
+  const [mq, setMq] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const mqMoved = useRef(false);
   const anchor = useRef<{ fx: number; fy: number; vx: number; vy: number } | null>(null);
   const zoomRef = useRef(1); zoomRef.current = zoom;
   const nodes = useRef(new Map<string, Konva.Node>());
@@ -333,7 +337,7 @@ export default function PageCanvas(p: {
 
   useEffect(() => { const c = stageRef.current?.content; if (c) c.style.touchAction = 'none'; }, []);
 
-  const padT = 10, padX = 12, padB = p.padB ?? 24;
+  const padT = 10 + (p.marquee ? 78 : 0), padX = 12, padB = p.padB ?? 24;
   const kFit = Math.max(0.01, Math.min((avail.w - padX * 2) / page.widthMm, (avail.h - padT - padB) / page.heightMm));
   const kz = kFit * zoom;
   const S = { w: page.widthMm * kz, h: page.heightMm * kz };
@@ -457,6 +461,20 @@ export default function PageCanvas(p: {
   const canResize = (!!onlyImage || multi) && !locked;
   const grp = useRef<{ x: number; y: number; w: number } | null>(null);
   const canRotate = (!!onlyImage || !!onlyText) && !locked;
+  const marqueeMove = () => {
+    if (!mq) return;
+    const q = stageRef.current?.getPointerPosition();
+    if (!q) return;
+    if (Math.abs(q.x - mq.x0) + Math.abs(q.y - mq.y0) > 6) mqMoved.current = true;
+    setMq({ ...mq, x1: q.x, y1: q.y });
+  };
+  const marqueeEnd = () => {
+    if (!mq) return;
+    const r = mq; setMq(null);
+    if (!mqMoved.current) return;
+    const x = Math.min(r.x0, r.x1) / kz, y = Math.min(r.y0, r.y1) / kz;
+    p.onMarquee?.(idsInRect(page, { x, y, w: Math.abs(r.x1 - r.x0) / kz, h: Math.abs(r.y1 - r.y0) / kz }));
+  };
   const pnSize = 10 * PT_MM * kz;
 
   return (
@@ -464,10 +482,19 @@ export default function PageCanvas(p: {
       <div className={'desk' + (zoom > 1 ? ' zoomed' : '')} ref={desk}>
         <div style={{ margin: 'auto', padding: `${padT + (p.hand ? 160 : 0)}px ${padX + (p.hand ? 120 : 0)}px ${padB + (p.hand ? 160 : 0)}px` }}>
           <div style={{ width: S.w, height: S.h, boxShadow: '0 2px 14px rgba(0,0,0,.25)' }}>
-            <Stage ref={stageRef} width={S.w} height={S.h}>
+            <Stage ref={stageRef} width={S.w} height={S.h}
+              onMouseMove={() => marqueeMove()} onTouchMove={() => marqueeMove()}
+              onMouseUp={() => marqueeEnd()} onTouchEnd={() => marqueeEnd()}>
               <Layer>
-                <Rect width={S.w} height={S.h} fill={page.background} onClick={p.onBlank} onTap={p.onBlank}
-                  onTouchStart={(e) => { const t = (e.evt as TouchEvent).touches[0]; if (t && zoomRef.current > 1) pan1.current = { x: t.clientX, y: t.clientY }; }} />
+                <Rect width={S.w} height={S.h} fill={page.background}
+                  onClick={() => { if (mqMoved.current) { mqMoved.current = false; return; } p.onBlank(); }}
+                  onTap={() => { if (mqMoved.current) { mqMoved.current = false; return; } p.onBlank(); }}
+                  onMouseDown={(e) => { if (!p.marquee || p.hand) return; const q = e.target.getStage()!.getPointerPosition()!; mqMoved.current = false; setMq({ x0: q.x, y0: q.y, x1: q.x, y1: q.y }); }}
+                  onTouchStart={(e) => {
+                    const t = (e.evt as TouchEvent).touches[0];
+                    if (p.marquee && !p.hand && (e.evt as TouchEvent).touches.length === 1) { const q = e.target.getStage()!.getPointerPosition()!; mqMoved.current = false; setMq({ x0: q.x, y0: q.y, x1: q.x, y1: q.y }); return; }
+                    if (t && zoomRef.current > 1) pan1.current = { x: t.clientX, y: t.clientY };
+                  }} />
                 {m > 2 && <Rect x={m} y={m} width={S.w - 2 * m} height={S.h - 2 * m} stroke="#8a93a6" dash={[5, 4]} strokeWidth={1} listening={false} />}
                 {page.images.map((im) => <ImageItem key={im.id} im={im} c={ctx} onChange={(pt) => p.onChange(im.id, pt)} onSwap={(b, cx, cy) => p.onSwap(im.id, b, cx, cy)} />)}
                 {page.frames.map((f) => <FrameItem key={f.id} f={f} c={ctx} onChange={(pt) => p.onChangeFrame(f.id, pt)} />)}
@@ -478,6 +505,7 @@ export default function PageCanvas(p: {
               <Layer>
                 {guides.v.map((x) => <Line key={'v' + x} points={[x, 0, x, S.h]} stroke={GUIDE} strokeWidth={1} dash={[6, 4]} listening={false} />)}
                 {guides.h.map((y) => <Line key={'h' + y} points={[0, y, S.w, y]} stroke={GUIDE} strokeWidth={1} dash={[6, 4]} listening={false} />)}
+                {mq && <Rect x={Math.min(mq.x0, mq.x1)} y={Math.min(mq.y0, mq.y1)} width={Math.abs(mq.x1 - mq.x0)} height={Math.abs(mq.y1 - mq.y0)} stroke={PRIMARY} strokeWidth={1.5} dash={[6, 4]} fill="rgba(124,92,255,.08)" listening={false} />}
                 <Transformer
                   ref={trRef} rotateEnabled={canRotate} resizeEnabled={canResize} keepRatio flipEnabled={false}
                   enabledAnchors={canResize ? ['top-left', 'top-right', 'bottom-left', 'bottom-right'] : []}

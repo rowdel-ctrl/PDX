@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayItem, Unit } from './types';
-import type { AlignMode } from './arrange';
+import type { AlignMode, SelectMode } from './arrange';
 import type { Template } from './templates';
 
 export type PanelId = 'add' | 'layout' | 'text' | 'page' | 'item';
@@ -51,6 +51,9 @@ export interface Ed {
   // selection actions
   deleteSel: () => void; duplicateSel: () => void; scaleSel: (f: number) => void; toggleLock: () => void;
   setGap: (gx: number, gy: number) => void; selectAll: () => void; fitIntoFrame: (imgId: string) => void;
+  selectMany: (ids: string[]) => void; selectBy: (m: SelectMode) => void; fillGridSel: (across: number, down: number, gapMm: number) => void;
+  setBox: (id: string, b: Partial<{ x: number; y: number; w: number; h: number }>) => void;
+  openSheet: (s: 'fill' | 'exact') => void;
   align: (m: AlignMode) => void; distribute: (axis: 'x' | 'y') => void; order: (to: 'front' | 'back') => void;
   // pages
   addPage: () => void; dupPage: (i: number) => void; delPage: (i: number) => void; movePage: (f: number, t: number) => void; goPage: (i: number) => void;

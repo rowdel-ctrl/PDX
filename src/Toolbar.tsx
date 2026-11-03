@@ -45,7 +45,7 @@ export function FloatingToolbar({ box, onPosition }: { box: SelBox; onPosition: 
   const above = box.y - 84;           // leaves room for the rotate handle
   const top = above < 6 ? Math.min(box.y + box.h + 18, 9999) : above;
   // Open the menu below the toolbar when there is not enough room above it (near the top of the screen).
-  const menuItems = 3 + (im && ed.page.frames.length ? 1 : 0) + (im && ed.page.layout !== 'free' ? 2 : 0) + (fr?.file ? 5 : 0) + (im ? 1 : 0);
+  const menuItems = 5 + (im && ed.page.frames.length ? 1 : 0) + (im && ed.page.layout !== 'free' ? 2 : 0) + (fr?.file ? 5 : 0) + (im ? 1 : 0);
   const menuBelow = top < menuItems * 42 + 24;
 
   return (
@@ -58,6 +58,8 @@ export function FloatingToolbar({ box, onPosition }: { box: SelBox; onPosition: 
       {menu && (
         <div className="ftb-menu" style={menuBelow ? { bottom: 'auto', top: 54 } : undefined}>
           <button onClick={() => { setMenu(false); onPosition(); }}><Layers /> Position and align</button>
+          {(im || fr || tx) && <button onClick={() => { setMenu(false); ed.openSheet('exact'); }}>Exact size and position</button>}
+          <button onClick={() => { setMenu(false); ed.openSheet('fill'); }}>Fill page with copies</button>
           <button onClick={() => { setMenu(false); ed.order('front'); }}>Bring to front</button>
           <button onClick={() => { setMenu(false); ed.order('back'); }}>Send to back</button>
           {im && ed.page.frames.length > 0 && <button onClick={() => { setMenu(false); ed.fitIntoFrame(im.id); }}>Put in a frame</button>}
@@ -88,7 +90,11 @@ export function PositionSheet({ onClose }: { onClose: () => void }) {
       <div className="sheet" role="dialog" aria-label="Position" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grab" />
         <div className="sheet-head"><b>Position and spacing</b><button className="icon-btn" onClick={onClose} aria-label="Close"><Close /></button></div>
-        <p className="muted small" style={{ margin: '0 0 8px' }}>{n > 1 ? 'Align the selected items to each other.' : 'Align the item to the page.'}</p>
+        <div className="icon-grid two">
+          <button className="tile" disabled={n !== 1} onClick={() => { onClose(); ed.openSheet('exact'); }}><span>Exact size</span></button>
+          <button className="tile" onClick={() => { onClose(); ed.openSheet('fill'); }}><span>Fill grid</span></button>
+        </div>
+        <p className="muted small" style={{ margin: '8px 0' }}>{n > 1 ? 'Align the selected items to each other.' : 'Align the item to the page.'}</p>
         <div className="icon-grid">
           {A.map(([ic, label, m]) => <button key={m} className="tile" aria-label={label} onClick={() => ed.align(m)}>{ic}<span>{label.replace('Align ', '')}</span></button>)}
         </div>

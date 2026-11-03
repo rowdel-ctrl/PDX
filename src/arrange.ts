@@ -180,3 +180,85 @@ export function groupBox(page: Page, ids: string[]): Box | null {
   const x1 = Math.max(...bs.map((b) => b.x + b.w)), y1 = Math.max(...bs.map((b) => b.y + b.h));
   return { x: x0 / page.widthMm, y: y0 / page.heightMm, w: (x1 - x0) / page.widthMm, h: (y1 - y0) / page.heightMm };
 }
+
+export type SelectMode = 'frames' | 'photos' | 'text' | 'empty' | 'same';
+
+/** Ids that match a "select by type" choice. `ref` is the item the "same size" test compares with. */
+export function selectWhere(page: Page, mode: SelectMode, ref?: string): string[] {
+  switch (mode) {
+    case 'frames': return page.frames.map((f) => f.id);
+    case 'photos': return page.images.map((i) => i.id);
+    case 'text': return page.texts.map((t) => t.id);
+    case 'empty': return page.frames.filter((f) => !f.file).map((f) => f.id);
+    case 'same': {
+      const r = ref ? findItem(page, ref) : null;
+      if (!r || r.kind === 'text') return [];
+      const o = r.item as PageImage | Frame, key = (q: { w: number; h: number }) => `${Math.round(q.w * page.widthMm * 10)}x${Math.round(q.h * page.heightMm * 10)}`;
+      const k = key(o);
+      return [...page.frames, ...page.images].filter((q) => key(q) === k).map((q) => q.id);
+    }
+  }
+}
+
+/** Items (page fractions) whose bounds touch a rectangle given in mm. */
+export function idsInRect(page: Page, r: Box): string[] {
+  const hit = (b: Box) => b.x < r.x + r.w && b.x + b.w > r.x && b.y < r.y + r.h && b.y + b.h > r.y;
+  const out: string[] = [];
+  for (const i of page.images) if (hit(itemBox(page, 'image', i))) out.push(i.id);
+  for (const f of page.frames) if (hit(itemBox(page, 'frame', f))) out.push(f.id);
+  for (const t of page.texts) if (hit(itemBox(page, 'text', t))) out.push(t.id);
+  return out;
+}
+
+/** Copy the selected items, moved by dx, dy mm. Returns the new page and the ids of the copies. */
+export function copyItems(page: Page, ids: string[], dxMm: number, dyMm: number, nid: () => string): { page: Page; made: string[] } {
+  const set = new Set(ids), made: string[] = [];
+  const mv = <T extends { x: number; y: number }>(o: T): T => ({ ...o, x: o.x + dxMm / page.widthMm, y: o.y + dyMm / page.heightMm });
+  const copy = <T extends { id: string; x: number; y: number; locked?: boolean }>(list: T[]): T[] =>
+    list.filter((o) => set.has(o.id)).map((o) => { const id = nid(); made.push(id); return { ...mv(o), id, locked: false }; });
+  return {
+    page: {
+      ...page, fill: undefined, layout: page.images.some((i) => set.has(i.id)) ? 'free' : page.layout,
+      images: [...page.images, ...copy(page.images)], frames: [...page.frames, ...copy(page.frames)], texts: [...page.texts, ...copy(page.texts)],
+    },
+    made,
+  };
+}
+
+/** How many copies of the group fit across and down from its top-left corner. */
+export function gridFit(page: Page, ids: string[], gapMm: number): { across: number; down: number; w: number; h: number } | null {
+  const b = groupBox(page, ids);
+  if (!b) return null;
+  const w = b.w * page.widthMm, h = b.h * page.heightMm, x0 = b.x * page.widthMm, y0 = b.y * page.heightMm;
+  const fit = (room: number, size: number) => Math.max(1, Math.floor((room + gapMm + 0.01) / (size + gapMm)));
+  return { across: fit(page.widthMm - x0, w), down: fit(page.heightMm - y0, h), w, h };
+}
+
+/** Repeat the selected items in rows and columns. The originals stay as the first cell. */
+export function fillGrid(page: Page, ids: string[], across: number, down: number, gapMm: number, nid: () => string): { page: Page; made: string[] } {
+  const g = gridFit(page, ids, gapMm);
+  if (!g) return { page, made: [] };
+  const cols = Math.min(across, g.across), rows = Math.min(down, g.down);
+  let cur = page; const made: string[] = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    if (!r && !c) continue;
+    const res = copyItems(cur, ids, c * (g.w + gapMm), r * (g.h + gapMm), nid);
+    cur = res.page; made.push(...res.made);
+  }
+  return { page: cur, made };
+}
+
+/** Set exact size and position (mm) of one image or frame, or the position of a text. */
+export function setBoxMm(page: Page, id: string, b: Partial<Box>): Page {
+  const W = page.widthMm, H = page.heightMm;
+  const f = <T extends { x: number; y: number; w: number; h: number }>(o: T): T => ({
+    ...o, x: b.x != null ? b.x / W : o.x, y: b.y != null ? b.y / H : o.y,
+    w: b.w != null ? Math.max(0.01, b.w / W) : o.w, h: b.h != null ? Math.max(0.01, b.h / H) : o.h,
+  });
+  return {
+    ...page, fill: undefined,
+    images: page.images.map((i) => (i.id === id ? f(i) : i)),
+    frames: page.frames.map((q) => (q.id === id ? f(q) : q)),
+    texts: page.texts.map((t) => (t.id === id ? { ...t, x: b.x != null ? b.x / W : t.x, y: b.y != null ? b.y / H : t.y } : t)),
+  };
+}

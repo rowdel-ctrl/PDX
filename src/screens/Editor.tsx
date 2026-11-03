@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayItem } from '../types';
 import { listProjects, newPage, saveProject } from '../storage';
 import { applyLayout, cellCount, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
-import { alignItems, distributeItems, findItem, gapItems, groupBox, mapSelected, reorder, scaleItems, type AlignMode, type AnyItem } from '../arrange';
+import { alignItems, distributeItems, findItem, gapItems, fillGrid, groupBox, mapSelected, reorder, scaleItems, selectWhere, setBoxMm, type SelectMode, type AlignMode, type AnyItem } from '../arrange';
 import { deleteImages, FULL, importImage, makeCutout, newId } from '../images';
 import RefineEdges from '../RefineEdges';
 import { faceFit, findFaces, mainFace, type Face } from '../vision';
@@ -13,6 +13,7 @@ import CropCard from '../CropCard';
 import PageGrid from '../PageGrid';
 import ExportSheet from './Export';
 import { FloatingToolbar, PositionSheet } from '../Toolbar';
+import { ExactSheet, FillGridSheet } from '../sheets';
 import { AddPanel, ItemPanel, LayoutPanel, PagePanel, TextPanel } from '../panels';
 import { EdCtx, type AddTab, type Ed, type PanelId } from '../editorContext';
 import type { Template } from '../templates';
@@ -442,6 +443,19 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     const b = groupBox(pg, selIds); if (!b) return pg;
     return scaleItems(pg, selIds, f, b.x, b.y, b.x - ((f - 1) * b.w) / 2, b.y - ((f - 1) * b.h) / 2);
   });
+  const [sheet, setSheet] = useState<'fill' | 'exact' | null>(null);
+  const selectMany = (ids: string[]) => { setSel(ids); if (ids.length > 1) setMulti(true); };
+  const selectBy = (m: SelectMode) => {
+    const ids = selectWhere(page, m, selIds[0]);
+    if (!ids.length) { say('Nothing to select'); return; }
+    setMulti(true); setSel(ids);
+  };
+  const fillGridSel = (across: number, down: number, gapMm: number) => {
+    const made: string[] = [];
+    editPage((pg) => { const r = fillGrid(pg, selIds, across, down, gapMm, () => { const i = newId(); made.push(i); return i; }); return r.page; });
+    setSel([...selIds, ...made]);
+  };
+  const setBox = (id: string, b: Partial<{ x: number; y: number; w: number; h: number }>) => editPage((pg) => setBoxMm(pg, id, b));
   const setGap = (gx: number, gy: number) => editPage((pg) => gapItems(pg, selIds, gx, gy));
   const selectAll = () => setSel([...page.frames.map((f) => f.id), ...page.images.map((i) => i.id), ...page.texts.map((t) => t.id)]);
   /** Put a loose photo into the nearest frame (an empty one if there is one). */
@@ -512,7 +526,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     placePhoto, updateFrame: (fid, patch) => updateFrame(fid, patch), resizeFrame, rotateFrame, copyToAll,
     detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, refineEdges, setBg,
     rotateImage, setCropSide, resetCrop, fillCell, fitCell, addText, updateText, setLayout, relayout, fillWith, applyTemplate,
-    deleteSel, duplicateSel, toggleLock, scaleSel, align, distribute, order, setGap, selectAll, fitIntoFrame,
+    deleteSel, duplicateSel, toggleLock, scaleSel, selectMany, selectBy, fillGridSel, setBox, openSheet: setSheet, align, distribute, order, setGap, selectAll, fitIntoFrame,
     addPage, dupPage, delPage, movePage, goPage, openGrid: () => setGridOpen(true),
   };
 
@@ -537,7 +551,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
 
         <PageCanvas
           page={page} pageNo={pi + 1} pageNumbers={proj.pageNumbers} unit={unit} selectedIds={selIds}
-          onPick={onPick} onBlank={() => { setSel([]); setAdjust(false); }} onMoveMany={moveMany} onScaleMany={scaleMany}
+          onPick={onPick} onBlank={() => { setSel([]); setAdjust(false); }} onMoveMany={moveMany} onScaleMany={scaleMany} marquee={multi} onMarquee={(ids) => { if (ids.length) setSel(ids); }}
           onChange={updateImage} onChangeText={updateText} onChangeFrame={(fid, patch) => updateFrame(fid, patch)} onSwap={swap}
           hand={hand} adjust={adjust} dropTarget={over} border={proj.frameBorder} cropMarks={proj.cropMarks} hitRef={hit}
           onSelBox={setSelBox} onDragging={setDragging}
@@ -550,11 +564,22 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
           {(multi || selIds.length > 1) && (() => {
             const total = page.images.length + page.frames.length + page.texts.length;
             return (
+              <>
               <div className="chip-hint">
                 {selIds.length ? <b>{selIds.length} of {total} selected</b> : 'Tap items to select them'}
                 {selIds.length < total && <button onClick={selectAll}>Select all</button>}
                 {selIds.length > 0 && <button onClick={() => setSel([])}>Clear</button>}
               </div>
+              {(multi || selIds.length > 1) && (
+                <div className="sel-chips" role="group" aria-label="Select by type">
+                  {page.frames.length > 0 && <button onClick={() => selectBy('frames')}>Frames · {page.frames.length}</button>}
+                  {page.images.length > 0 && <button onClick={() => selectBy('photos')}>Photos · {page.images.length}</button>}
+                  {page.texts.length > 0 && <button onClick={() => selectBy('text')}>Text · {page.texts.length}</button>}
+                  {page.frames.some((f) => !f.file) && <button onClick={() => selectBy('empty')}>Empty frames · {page.frames.filter((f) => !f.file).length}</button>}
+                  {selIds.length > 0 && <button onClick={() => selectBy('same')}>Same size as first</button>}
+                </div>
+              )}
+              </>
             );
           })()}
           {!panel && !selIds.length && !page.images.length && !page.texts.length && page.frames.every((f) => !f.file) && (
@@ -602,6 +627,8 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
 
         {toast && <div className="toast" role="status">{toast}</div>}
         {exporting && <ExportSheet project={proj} onClose={() => setExporting(false)} />}
+        {sheet === 'fill' && <FillGridSheet onClose={() => setSheet(null)} />}
+        {sheet === 'exact' && <ExactSheet onClose={() => setSheet(null)} />}
         {refine && <RefineEdges file={refine.file} bg={refine.bg} onCancel={() => setRefine(null)} onDone={(c) => applyRefined(refine.id, c)} />}
         {posOpen && <PositionSheet onClose={() => setPosOpen(false)} />}
         {gridOpen && <PageGrid project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} onClose={() => setGridOpen(false)} />}
