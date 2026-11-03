@@ -352,7 +352,7 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
 
       <PageCanvas page={page} pageNo={pi + 1} pageNumbers={proj.pageNumbers} unit={unit} selectedId={sel} onSelect={onCanvasSelect}
         onChange={updateImage} onChangeText={updateText} onSwap={swap} onChangeFrame={updateFrame}
-        adjust={adjust && !!selFrame?.file} dropTarget={over} cutLines={proj.cutLines} cropMarks={proj.cropMarks} hitRef={hit} />
+        adjust={adjust && !!selFrame?.file} dropTarget={over} border={proj.frameBorder} cropMarks={proj.cropMarks} hitRef={hit} />
 
       <div className="pager">
         <button className="icon-btn" disabled={pi === 0} onClick={() => goPage(pi - 1)} aria-label="Previous page"><Left /></button>
@@ -486,7 +486,7 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
             onRemovePhoto={() => selFrame && updateFrame(selFrame.id, { file: '', zoom: 1, cx: 0.5, cy: 0.5, rot: 0 })}
             onSetSize={() => selFrame && resizeFrame(selFrame, fsize.w, fsize.h)} onCopyAll={() => selFrame && copyToAll(selFrame)}
             onDelete={() => { if (selFrame) { editPage((pg) => ({ ...pg, frames: pg.frames.filter((f) => f.id !== selFrame.id) })); setSel(null); } }}
-            onAdjust={setAdjust} onCutLines={(b) => edit((p) => ({ ...p, cutLines: b }))} onCropMarks={(b) => edit((p) => ({ ...p, cropMarks: b }))}
+            onAdjust={setAdjust} onBorder={(b) => edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, ...b } }))} onCropMarks={(b) => edit((p) => ({ ...p, cropMarks: b }))}
             autoFace={autoFace} onAutoFace={setAutoFace} onCenterFace={() => selFrame && centerFace(selFrame.id)} onCenterAll={centerAllFaces} />
         )}
         {tab === 'pages' && <PagesPanel project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} />}
@@ -508,7 +508,7 @@ function FramesPanel(p: {
   onSize: (w: number, h: number) => void; onAddFrame: () => void; onFill: () => void; onClear: () => void;
   onAddPhotos: (f: FileList | null) => void; onSelectTray: (id: string | null) => void; onRemoveTray: (id: string) => void;
   onPlace: (frameId: string, t: TrayItem) => void; onFrame: (patch: Partial<Frame>) => void; onRotate: (d: 1 | -1) => void;
-  onRemovePhoto: () => void; onSetSize: () => void; onCopyAll: () => void; onDelete: () => void; onAdjust: (b: boolean) => void; onCutLines: (b: boolean) => void; onCropMarks: (b: boolean) => void;
+  onRemovePhoto: () => void; onSetSize: () => void; onCopyAll: () => void; onDelete: () => void; onAdjust: (b: boolean) => void; onBorder: (b: Partial<Project['frameBorder']>) => void; onCropMarks: (b: boolean) => void;
   autoFace: boolean; onAutoFace: (b: boolean) => void; onCenterFace: () => void; onCenterAll: () => void;
 }) {
   const { project, page, frame, unit, size } = p;
@@ -619,9 +619,26 @@ function FramesPanel(p: {
         <input type="checkbox" checked={p.autoFace} onChange={(e) => p.onAutoFace(e.target.checked)} />
       </label>
       {page.frames.some((f) => f.file) && <button className="btn" onClick={p.onCenterAll}>Center faces in all frames</button>}
-      <label className="field-row">Cut lines around photos
-        <input type="checkbox" checked={project.cutLines} onChange={(e) => p.onCutLines(e.target.checked)} />
+      <label className="field-row">Borders around photos (for cutting)
+        <input type="checkbox" checked={project.frameBorder.on} onChange={(e) => p.onBorder({ on: e.target.checked })} />
       </label>
+      {project.frameBorder.on && (
+        <>
+          <label className="slider"><span>Thickness</span>
+            <input type="range" min={0.1} max={2} step={0.1} value={project.frameBorder.widthMm} onChange={(e) => p.onBorder({ widthMm: Number(e.target.value) })} />
+            <span className="muted val">{project.frameBorder.widthMm.toFixed(1)} mm</span></label>
+          <label className="field-row">Border color
+            <input type="color" value={project.frameBorder.color} onChange={(e) => p.onBorder({ color: e.target.value })} />
+          </label>
+          <div className="field-row">Border sits
+            <div className="seg">
+              <button className={project.frameBorder.place === 'outside' ? 'on' : ''} onClick={() => p.onBorder({ place: 'outside' })}>Outside</button>
+              <button className={project.frameBorder.place === 'inside' ? 'on' : ''} onClick={() => p.onBorder({ place: 'inside' })}>Inside</button>
+            </div>
+          </div>
+          <span className="muted small">{project.frameBorder.place === 'outside' ? 'Outside keeps the photo at its full size; cut just inside the line.' : 'Inside draws over the photo edge; cut along the outer edge.'}</span>
+        </>
+      )}
       <label className="field-row">Crop marks at photo corners
         <input type="checkbox" checked={project.cropMarks} onChange={(e) => p.onCropMarks(e.target.checked)} />
       </label>

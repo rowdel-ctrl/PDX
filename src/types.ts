@@ -11,6 +11,7 @@ export interface Frame {
   zoom: number;                // 1 = photo just covers the frame
   cx: number; cy: number;      // centre of the visible part, fractions of the (rotated) photo
 }
+export interface FrameBorder { on: boolean; widthMm: number; color: string; place: 'outside' | 'inside' }
 export interface TrayItem { id: string; file: string; aspect: number }
 export interface PageText { id: string; text: string; x: number; y: number; sizePt: number; color: string; bold: boolean }
 export type Quality = 'small' | 'standard' | 'high';
@@ -58,7 +59,8 @@ export interface Project {
   widthMm: number;
   heightMm: number;
   pageNumbers: boolean;
-  cutLines: boolean;
+  /** border drawn around each filled frame, as a cutting guide */
+  frameBorder: FrameBorder;
   cropMarks: boolean;
   tray: TrayItem[];
   pages: Page[];

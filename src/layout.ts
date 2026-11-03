@@ -166,3 +166,9 @@ export function cropMarkSegments(w: number, h: number): [number, number, number,
   }
   return out;
 }
+
+/** Rectangle a frame border is stroked along (frame-local mm). Stroke is centred on this path. */
+export function borderRect(w: number, h: number, bw: number, place: 'outside' | 'inside') {
+  const o = place === 'outside' ? -bw / 2 : bw / 2;
+  return { x: o, y: o, w: w - 2 * o, h: h - 2 * o };
+}
