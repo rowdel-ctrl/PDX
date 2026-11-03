@@ -7,6 +7,7 @@ import { fmt, MAX_MM, MIN_MM, presetOf, PRESETS, toMm } from '../units';
 import PageCanvas from '../PageCanvas';
 import PageThumb, { PhotoThumb } from '../PageThumb';
 import NumField from '../NumField';
+import { faceFit, findFace } from '../face';
 import Export from './Export';
 import { useBack } from '../back';
 import { Back, Copy, Grid, Image as ImageIcon, Left, Palette, Pages as PagesIcon, Plus, Right, Size, Trash, Type, Undo, Redo, RotL, RotR, FrameIcon } from '../icons';
@@ -48,6 +49,7 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
   const [fsize, setFsize] = useState({ w: 35, h: 45 });
   const [selTray, setSelTray] = useState<string | null>(null);
   const [adjust, setAdjust] = useState(false);
+  const [autoFace, setAutoFace] = useState(true);
   const [over, setOver] = useState<string | null>(null);
   const hit = useRef<((x: number, y: number) => string | null) | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -240,7 +242,23 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
   const placePhoto = (fid: string, t: TrayItem) => {
     updateFrame(fid, { file: t.file, aspect: t.aspect, rot: 0, zoom: 1, cx: 0.5, cy: 0.5 });
     setSel(fid);
+    if (autoFace) centerFace(fid, true);
   };
+  /** Find the face in a frame's photo and zoom/centre so the head fills the frame. */
+  const centerFace = async (fid: string, quiet = false) => {
+    const idx = pi;
+    const f = projRef.current?.pages[idx]?.frames.find((q) => q.id === fid);
+    if (!f?.file) return;
+    if (!quiet) say('Looking for a face…');
+    const face = await findFace(f.file, f.rot);
+    const cur = projRef.current?.pages[idx];
+    const now = cur?.frames.find((q) => q.id === fid);
+    if (!cur || !now || now.file !== f.file) return; // changed while we were looking
+    if (!face) { say('No face found. Use Move photo and Zoom.'); return; }
+    editPage((pg) => ({ ...pg, frames: pg.frames.map((q) => (q.id === fid ? clampFrame({ ...q, ...faceFit(q, face, pg.widthMm, pg.heightMm) }, pg.widthMm, pg.heightMm) : q)) }), idx);
+    if (!quiet) say('Face centered');
+  };
+  const centerAllFaces = async () => { for (const f of page.frames) if (f.file) await centerFace(f.id, true); say('Faces centered'); };
   const addTray = async (files: FileList | null) => {
     if (!files?.length) return;
     say('Adding photos…');
@@ -334,7 +352,7 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
 
       <PageCanvas page={page} pageNo={pi + 1} pageNumbers={proj.pageNumbers} unit={unit} selectedId={sel} onSelect={onCanvasSelect}
         onChange={updateImage} onChangeText={updateText} onSwap={swap} onChangeFrame={updateFrame}
-        adjust={adjust && !!selFrame?.file} dropTarget={over} cutLines={proj.cutLines} hitRef={hit} />
+        adjust={adjust && !!selFrame?.file} dropTarget={over} cutLines={proj.cutLines} cropMarks={proj.cropMarks} hitRef={hit} />
 
       <div className="pager">
         <button className="icon-btn" disabled={pi === 0} onClick={() => goPage(pi - 1)} aria-label="Previous page"><Left /></button>
@@ -468,7 +486,8 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
             onRemovePhoto={() => selFrame && updateFrame(selFrame.id, { file: '', zoom: 1, cx: 0.5, cy: 0.5, rot: 0 })}
             onSetSize={() => selFrame && resizeFrame(selFrame, fsize.w, fsize.h)} onCopyAll={() => selFrame && copyToAll(selFrame)}
             onDelete={() => { if (selFrame) { editPage((pg) => ({ ...pg, frames: pg.frames.filter((f) => f.id !== selFrame.id) })); setSel(null); } }}
-            onAdjust={setAdjust} onCutLines={(b) => edit((p) => ({ ...p, cutLines: b }))} />
+            onAdjust={setAdjust} onCutLines={(b) => edit((p) => ({ ...p, cutLines: b }))} onCropMarks={(b) => edit((p) => ({ ...p, cropMarks: b }))}
+            autoFace={autoFace} onAutoFace={setAutoFace} onCenterFace={() => selFrame && centerFace(selFrame.id)} onCenterAll={centerAllFaces} />
         )}
         {tab === 'pages' && <PagesPanel project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} />}
       </section>
@@ -489,7 +508,8 @@ function FramesPanel(p: {
   onSize: (w: number, h: number) => void; onAddFrame: () => void; onFill: () => void; onClear: () => void;
   onAddPhotos: (f: FileList | null) => void; onSelectTray: (id: string | null) => void; onRemoveTray: (id: string) => void;
   onPlace: (frameId: string, t: TrayItem) => void; onFrame: (patch: Partial<Frame>) => void; onRotate: (d: 1 | -1) => void;
-  onRemovePhoto: () => void; onSetSize: () => void; onCopyAll: () => void; onDelete: () => void; onAdjust: (b: boolean) => void; onCutLines: (b: boolean) => void;
+  onRemovePhoto: () => void; onSetSize: () => void; onCopyAll: () => void; onDelete: () => void; onAdjust: (b: boolean) => void; onCutLines: (b: boolean) => void; onCropMarks: (b: boolean) => void;
+  autoFace: boolean; onAutoFace: (b: boolean) => void; onCenterFace: () => void; onCenterAll: () => void;
 }) {
   const { project, page, frame, unit, size } = p;
   const fileRef = useRef<HTMLInputElement>(null);
@@ -576,6 +596,7 @@ function FramesPanel(p: {
           {frame.file ? (
             <>
               <div className="tools">
+                <button className="btn" onClick={p.onCenterFace}>Center face</button>
                 <button className={'btn' + (p.adjust ? ' on' : '')} onClick={() => p.onAdjust(!p.adjust)}>{p.adjust ? 'Done adjusting' : 'Move photo'}</button>
                 <button className="btn" onClick={() => p.onRotate(-1)} aria-label="Rotate left"><RotL /></button>
                 <button className="btn" onClick={() => p.onRotate(1)} aria-label="Rotate right"><RotR /></button>
@@ -594,9 +615,17 @@ function FramesPanel(p: {
           </div>
         </div>
       ) : <p className="muted small">Tap a frame on the page to select it. Drag it to move it.</p>}
+      <label className="field-row">Auto-center face when placing a photo
+        <input type="checkbox" checked={p.autoFace} onChange={(e) => p.onAutoFace(e.target.checked)} />
+      </label>
+      {page.frames.some((f) => f.file) && <button className="btn" onClick={p.onCenterAll}>Center faces in all frames</button>}
       <label className="field-row">Cut lines around photos
         <input type="checkbox" checked={project.cutLines} onChange={(e) => p.onCutLines(e.target.checked)} />
       </label>
+      <label className="field-row">Crop marks at photo corners
+        <input type="checkbox" checked={project.cropMarks} onChange={(e) => p.onCropMarks(e.target.checked)} />
+      </label>
+      {project.cropMarks && page.spacingMm < 4 && <span className="muted small">Crop marks need about 4 mm between frames. Raise Spacing in the Layout tab and use Fill page again.</span>}
 
       {ghost && <div className="ghost" style={{ left: ghost.x, top: ghost.y }}><PhotoThumb file={ghost.t.file} size={72} /></div>}
     </div>

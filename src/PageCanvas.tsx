@@ -3,7 +3,7 @@ import { Group, Image as KImage, Layer, Line, Rect, Stage, Text as KText, Transf
 import Konva from 'konva';
 import type { Frame, Page, PageImage, PageText, Unit } from './types';
 import { FULL, variantUrl } from './images';
-import { frameCrop } from './layout';
+import { cropMarkSegments, frameCrop } from './layout';
 import { fmt } from './units';
 
 const SNAP_PX = 8;
@@ -110,8 +110,8 @@ function Item({ im, c, onChange, onSwap }: {
 }
 
 
-function FrameItem({ f, c, kz, adjust, dropTarget, cutLines, onChange }: {
-  f: Frame; c: Common; kz: number; adjust: boolean; dropTarget: boolean; cutLines: boolean; onChange: (p: Partial<Frame>) => void;
+function FrameItem({ f, c, kz, adjust, dropTarget, cutLines, cropMarks, onChange }: {
+  f: Frame; c: Common; kz: number; adjust: boolean; dropTarget: boolean; cutLines: boolean; cropMarks: boolean; onChange: (p: Partial<Frame>) => void;
 }) {
   const { S, m, unit, page } = c;
   const [img, setImg] = useState<HTMLImageElement | null>(null);
@@ -127,7 +127,6 @@ function FrameItem({ f, c, kz, adjust, dropTarget, cutLines, onChange }: {
   const mmW = page.widthMm / S.w, mmH = page.heightMm / S.h;
   const pan = useRef({ px: 0, py: 0, cx: 0, cy: 0 });
   const imgRef = useRef<Konva.Image>(null);
-  void kz;
   return (
     <Group
       x={f.x * S.w} y={f.y * S.h} width={fw} height={fh}
@@ -154,6 +153,9 @@ function FrameItem({ f, c, kz, adjust, dropTarget, cutLines, onChange }: {
         <KText width={fw} height={fh} align="center" verticalAlign="middle" fontSize={Math.max(9, Math.min(fw, fh) / 6)} fill="#5B6372" listening={false}
           text={f.file ? '…' : `Drop photo\n${fmt(f.w * page.widthMm, unit)}×${fmt(f.h * page.heightMm, unit)} ${unit}`} />
       )}
+      {cropMarks && img && cropMarkSegments(f.w * page.widthMm, f.h * page.heightMm).map((q, i) => (
+        <Line key={i} points={q.map((v) => v * kz)} stroke="#333" strokeWidth={1} listening={false} />
+      ))}
       <Rect width={fw} height={fh} listening={false}
         stroke={dropTarget ? GUIDE : c.selected ? '#3D4DFF' : cutLines || !img ? '#8a93a6' : undefined}
         strokeWidth={dropTarget || c.selected ? 2 : 1} dash={img ? undefined : [5, 4]} />
@@ -184,14 +186,14 @@ function TextItem({ t, c, kz, onChange }: { t: PageText; c: Common; kz: number; 
   );
 }
 
-export default function PageCanvas({ page, pageNo, pageNumbers, unit, selectedId, onSelect, onChange, onChangeText, onSwap, onChangeFrame, adjust, dropTarget, cutLines, hitRef }: {
+export default function PageCanvas({ page, pageNo, pageNumbers, unit, selectedId, onSelect, onChange, onChangeText, onSwap, onChangeFrame, adjust, dropTarget, cutLines, cropMarks, hitRef }: {
   page: Page; pageNo: number; pageNumbers: boolean; unit: Unit; selectedId: string | null;
   onSelect: (id: string | null, tap?: boolean) => void;
   onChange: (imgId: string, p: Partial<PageImage>) => void;
   onChangeText: (id: string, p: Partial<PageText>) => void;
   onSwap: (aId: string, bId: string, startCx: number, startCy: number) => void;
   onChangeFrame: (id: string, p: Partial<Frame>) => void;
-  adjust: boolean; dropTarget: string | null; cutLines: boolean;
+  adjust: boolean; dropTarget: string | null; cutLines: boolean; cropMarks: boolean;
   hitRef: React.MutableRefObject<((x: number, y: number) => string | null) | null>;
 }) {
   const desk = useRef<HTMLDivElement>(null);
@@ -290,7 +292,7 @@ export default function PageCanvas({ page, pageNo, pageNumbers, unit, selectedId
                   <Item key={im.id} im={im} c={common(im.id)} onChange={(p) => onChange(im.id, p)} onSwap={(b, cx, cy) => onSwap(im.id, b, cx, cy)} />
                 ))}
                 {page.frames.map((f) => (
-                  <FrameItem key={f.id} f={f} c={common(f.id)} kz={kz} adjust={adjust} dropTarget={dropTarget === f.id} cutLines={cutLines} onChange={(p) => onChangeFrame(f.id, p)} />
+                  <FrameItem key={f.id} f={f} c={common(f.id)} kz={kz} adjust={adjust} dropTarget={dropTarget === f.id} cutLines={cutLines} cropMarks={cropMarks} onChange={(p) => onChangeFrame(f.id, p)} />
                 ))}
                 {bw > 0 && <Rect x={bw / 2} y={bw / 2} width={S.w - bw} height={S.h - bw} stroke={page.border.color} strokeWidth={bw} listening={false} />}
                 {page.texts.map((t) => <TextItem key={t.id} t={t} kz={kz} c={common(t.id)} onChange={(p) => onChangeText(t.id, p)} />)}

@@ -1,7 +1,7 @@
 import { PDFDocument, PDFFont, rgb, StandardFonts } from 'pdf-lib';
 import type { Project, Quality } from './types';
 import { exportBytes } from './images';
-import { frameCrop } from './layout';
+import { cropMarkSegments, frameCrop } from './layout';
 import { mmToPt } from './units';
 
 const hex = (c: string) => {
@@ -40,6 +40,15 @@ export async function buildPdf(p: Project, quality: Quality, onProgress?: (n: nu
       if (!e) { e = await doc.embedJpg(await exportBytes(f.file, f.rot, crop, quality)); embedded.set(key, e); }
       page.drawImage(e, { x: f.x * W, y: H - (f.y + f.h) * H, width: f.w * W, height: f.h * H });
       if (p.cutLines) page.drawRectangle({ x: f.x * W, y: H - (f.y + f.h) * H, width: f.w * W, height: f.h * H, borderColor: rgb(0.55, 0.55, 0.55), borderWidth: 0.3 });
+    }
+    if (p.cropMarks) {
+      for (const f of pg.frames) {
+        if (!f.file) continue;
+        const fx = f.x * pg.widthMm, fy = f.y * pg.heightMm;
+        for (const [x1, y1, x2, y2] of cropMarkSegments(f.w * pg.widthMm, f.h * pg.heightMm)) {
+          page.drawLine({ start: { x: mmToPt(fx + x1), y: H - mmToPt(fy + y1) }, end: { x: mmToPt(fx + x2), y: H - mmToPt(fy + y2) }, thickness: 0.4, color: rgb(0.2, 0.2, 0.2) });
+        }
+      }
     }
     if (pg.border.on) {
       const bw = mmToPt(pg.border.widthMm);

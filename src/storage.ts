@@ -14,7 +14,7 @@ export function listProjects(): Project[] {
 /** Fill in fields older saved projects don't have. */
 function normalize(p: Project): Project {
   return {
-    ...p, pageNumbers: p.pageNumbers ?? false, cutLines: p.cutLines ?? true, tray: p.tray ?? [],
+    ...p, pageNumbers: p.pageNumbers ?? false, cutLines: p.cutLines ?? true, cropMarks: p.cropMarks ?? false, tray: p.tray ?? [],
     pages: p.pages.map((pg) => ({
       ...pg, texts: pg.texts ?? [], frames: pg.frames ?? [],
       images: pg.images.map((im) => ({ ...im, rot: im.rot ?? 0, crop: im.crop ?? { x: 0, y: 0, w: 1, h: 1 } })),
@@ -42,7 +42,7 @@ export function newPage(widthMm: number, heightMm: number): Page {
 
 export function newProject(name: string, widthMm = 210, heightMm = 297): Project {
   const now = Date.now();
-  return { id: newId(), name, created: now, updated: now, unit: 'mm', widthMm, heightMm, pageNumbers: false, cutLines: true, tray: [], pages: [newPage(widthMm, heightMm)] };
+  return { id: newId(), name, created: now, updated: now, unit: 'mm', widthMm, heightMm, pageNumbers: false, cutLines: true, cropMarks: false, tray: [], pages: [newPage(widthMm, heightMm)] };
 }
 
 export { applyLayout };

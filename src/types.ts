@@ -59,6 +59,7 @@ export interface Project {
   heightMm: number;
   pageNumbers: boolean;
   cutLines: boolean;
+  cropMarks: boolean;
   tray: TrayItem[];
   pages: Page[];
 }

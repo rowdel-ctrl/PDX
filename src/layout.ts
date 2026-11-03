@@ -131,12 +131,11 @@ export function clampFrame(f: Frame, pageW: number, pageH: number): Frame {
 export const emptyFrame = (x: number, y: number, w: number, h: number, pageW: number, pageH: number): Frame =>
   ({ id: newId(), x: x / pageW, y: y / pageH, w: w / pageW, h: h / pageH, file: '', aspect: 1, rot: 0, zoom: 1, cx: 0.5, cy: 0.5 });
 
-/** Frames of one size laid out in a centred grid inside the margins (best of portrait/landscape). */
+/** Frames of one size laid out in a centred grid inside the margins. */
 export function fillFrames(page: Page, wMm: number, hMm: number): Frame[] {
-  const a = gridFor(page, wMm, hMm), b = gridFor(page, hMm, wMm);
-  const turned = b.cols * b.rows > a.cols * a.rows;
-  const [w, h] = turned ? [hMm, wMm] : [wMm, hMm];
-  const { cols, rows } = turned ? b : a;
+  // keep the orientation the user chose (swap width/height in the UI to turn frames)
+  const { cols, rows } = gridFor(page, wMm, hMm);
+  const w = wMm, h = hMm;
   const s = page.spacingMm;
   const gw = cols * w + (cols - 1) * s, gh = rows * h + (rows - 1) * s;
   const x0 = (page.widthMm - gw) / 2, y0 = (page.heightMm - gh) / 2;
@@ -153,4 +152,17 @@ export function freeSpot(page: Page, wMm: number, hMm: number): { x: number; y: 
     for (let x = m; x + wMm <= page.widthMm - m + 0.01; x += 2)
       if (!taken.some((t) => x < t.x + t.w + s && x + wMm + s > t.x && y < t.y + t.h + s && y + hMm + s > t.y)) return { x, y };
   return null;
+}
+
+export const CROP_GAP = 0.8, CROP_LEN = 2.5; // mm
+
+/** Crop mark segments around a w x h mm frame (frame-local mm, y down): [x1, y1, x2, y2]. */
+export function cropMarkSegments(w: number, h: number): [number, number, number, number][] {
+  const out: [number, number, number, number][] = [];
+  for (const cx of [0, w]) for (const cy of [0, h]) {
+    const dx = cx === 0 ? -1 : 1, dy = cy === 0 ? -1 : 1;
+    out.push([cx + dx * CROP_GAP, cy, cx + dx * (CROP_GAP + CROP_LEN), cy]);
+    out.push([cx, cy + dy * CROP_GAP, cx, cy + dy * (CROP_GAP + CROP_LEN)]);
+  }
+  return out;
 }
