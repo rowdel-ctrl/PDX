@@ -25,9 +25,9 @@ import { Back, Checklist, Close, Copy, Crop as CropIcon, Edit, Hand, Grid, Layer
 
 export type Tab = PanelId;
 const NAV: [PanelId, string, () => React.ReactElement][] = [
-  ['add', 'Add', Plus], ['layout', 'Layout', Grid], ['text', 'Text', Type], ['page', 'Page', Tune], ['select', 'Select', Checklist],
+  ['add', 'Add', Plus], ['layout', 'Grid', Grid], ['text', 'Text', Type], ['page', 'Page', Tune], ['select', 'Select', Checklist],
 ];
-const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Layout', text: 'Text', page: 'Page', item: 'Crop', cutout: 'Cut out', color: 'Background color', arrange: 'Arrange', copies: 'Copies', select: 'Select', size: 'Group size', enhance: 'Enhance' };
+const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Grid', text: 'Text', page: 'Page', item: 'Crop', cutout: 'Cut out', color: 'Background color', arrange: 'Arrange', copies: 'Copies', select: 'Select', size: 'Group size', enhance: 'Enhance' };
 
 const filesOf = (p: Project) => new Set([
   ...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]),

@@ -305,12 +305,6 @@ export function LayoutPanel() {
       </div>
       <SliderRow label="Gap" value={page.spacingMm} min={0} max={30} suffix={`${fmt(page.spacingMm, unit)} ${unit}`} onChange={(v) => ed.editPage((pg) => ed.relayout({ ...pg, spacingMm: v }))} />
       <SliderRow label="Edge" value={page.marginMm} min={0} max={50} suffix={`${fmt(page.marginMm, unit)} ${unit}`} onChange={(v) => ed.editPage((pg) => ed.relayout({ ...pg, marginMm: v }))} />
-      <More title="Print a photo at a set size">
-        <span className="muted small">Fills the page with copies of the selected photo (or the first one) at an exact size.</span>
-        <div className="chips">
-          {PHOTO_SIZES.map(([n, w, h]) => { const c = fitCount(page, w, h); return <Chip key={n} disabled={!c} onClick={() => ed.fillWith(w, h)}>{n}{c ? ` · ${c}` : ''}</Chip>; })}
-        </div>
-      </More>
       {cellCount(page.layout) < 99 && <span className="muted small">{page.images.length} of {cellCount(page.layout)} photos on this page.</span>}
     </div>
   );
