@@ -1,28 +1,41 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { LayoutId, Page, PageImage, Project } from '../types';
+import type { Crop, LayoutId, Page, PageImage, PageText, Project, Unit } from '../types';
 import { listProjects, newPage, saveProject } from '../storage';
-import { applyLayout, cellCount, LAYOUTS } from '../layout';
-import { deleteImages, importImage, newId } from '../images';
-import { fmt, fromMm, MAX_MM, MIN_MM, presetOf, PRESETS, toMm } from '../units';
-import type { Unit } from '../types';
+import { applyLayout, cellCount, cellRect, cropToAspect, dispAspect, fillPage, fitCount, freeBox, LAYOUTS, rotateCrop } from '../layout';
+import { deleteImages, FULL, importImage, newId } from '../images';
+import { fmt, MAX_MM, MIN_MM, presetOf, PRESETS, toMm } from '../units';
 import PageCanvas from '../PageCanvas';
 import PageThumb from '../PageThumb';
 import Export from './Export';
-import { Back, Copy, Grid, Image as ImageIcon, Left, Palette, Pages as PagesIcon, Plus, Right, Size, Trash } from '../icons';
+import { useBack } from '../back';
+import { Back, Copy, Grid, Image as ImageIcon, Left, Palette, Pages as PagesIcon, Plus, Right, Size, Trash, Type, Undo, Redo, RotL, RotR } from '../icons';
 
-type Tab = 'images' | 'layout' | 'size' | 'style' | 'pages';
+type Tab = 'images' | 'layout' | 'size' | 'style' | 'text' | 'pages';
 const TABS: [Tab, string, () => React.ReactElement][] = [
-  ['images', 'Images', ImageIcon], ['layout', 'Layout', Grid], ['size', 'Size', Size], ['style', 'Style', Palette], ['pages', 'Pages', PagesIcon],
+  ['images', 'Images', ImageIcon], ['layout', 'Layout', Grid], ['size', 'Size', Size], ['style', 'Style', Palette], ['text', 'Text', Type], ['pages', 'Pages', PagesIcon],
 ];
+
+const PHOTO_SIZES: [string, number, number][] = [
+  ['Passport 35×45 mm', 35, 45], ['US 2×2 in', 50.8, 50.8], ['Wallet 2.5×3.5 in', 63.5, 88.9], ['4×6 in', 101.6, 152.4], ['5×7 in', 127, 177.8],
+];
+
+const filesOf = (p: Project) => new Set(p.pages.flatMap((pg) => pg.images.map((i) => i.file)));
 
 export default function Editor({ id, onBack }: { id: string; onBack: () => void }) {
   const [proj, setProj] = useState<Project | null>(() => listProjects().find((p) => p.id === id) ?? null);
+  const projRef = useRef(proj);
+  const past = useRef<Project[]>([]);
+  const future = useRef<Project[]>([]);
+  const lastPush = useRef(0);
+  const seen = useRef<Set<string>>(new Set(proj ? filesOf(proj) : []));
+  const [hist, setHist] = useState({ u: 0, r: 0 });
   const [pi, setPi] = useState(0);
   const [tab, setTab] = useState<Tab>('images');
   const [sel, setSel] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [toast, setToast] = useState('');
   const [saved, setSaved] = useState(true);
+  const [cropOpen, setCropOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // autosave
@@ -34,74 +47,180 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
   }, [proj]);
 
   const say = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2500); };
-  const edit = useCallback((fn: (p: Project) => Project) => setProj((p) => (p ? fn(p) : p)), []);
-  const editPage = useCallback((fn: (pg: Page) => Page, index?: number) =>
-    edit((p) => { const i = index ?? pi; return { ...p, pages: p.pages.map((pg, k) => (k === i ? fn(pg) : pg)) }; }), [edit, pi]);
+  const sync = () => setHist({ u: past.current.length, r: future.current.length });
+
+  /** Every change goes through here so it can be undone. Quick bursts (slider drags) count as one step. */
+  const edit = useCallback((fn: (p: Project) => Project) => {
+    const cur = projRef.current;
+    if (!cur) return;
+    const next = fn(cur);
+    if (next === cur) return;
+    const now = Date.now();
+    if (now - lastPush.current > 500) { past.current.push(cur); if (past.current.length > 60) past.current.shift(); }
+    lastPush.current = now;
+    future.current = [];
+    projRef.current = next; setProj(next); sync();
+  }, []);
+  const editPage = useCallback((fn: (pg: Page) => Page, index?: number) => {
+    const i = index ?? pi;
+    edit((p) => ({ ...p, pages: p.pages.map((pg, k) => (k === i ? fn(pg) : pg)) }));
+  }, [edit, pi]);
+
+  const jump = (to: Project) => {
+    projRef.current = to; setProj(to); sync();
+    setPi((i) => Math.min(i, to.pages.length - 1)); setSel(null);
+    lastPush.current = 0;
+  };
+  const undo = () => { const p = past.current.pop(); if (p && projRef.current) { future.current.push(projRef.current); jump(p); } };
+  const redo = () => { const p = future.current.pop(); if (p && projRef.current) { past.current.push(projRef.current); jump(p); } };
+
+  /** Leave the editor: save, then delete image files nothing uses any more. */
+  const leave = () => {
+    const cur = projRef.current;
+    if (cur) {
+      saveProject(cur);
+      const keep = filesOf(cur);
+      deleteImages([...seen.current].filter((f) => !keep.has(f)));
+    }
+    onBack();
+  };
+  useBack(() => { if (exporting) setExporting(false); else leave(); });
 
   if (!proj) return <div className="screen pad"><button className="btn" onClick={onBack}>Back</button><p>Project not found.</p></div>;
   const page = proj.pages[Math.min(pi, proj.pages.length - 1)];
   const unit = proj.unit;
+  const selImage = page.images.find((i) => i.id === sel) ?? null;
+  const selText = page.texts.find((t) => t.id === sel) ?? null;
 
   const addImages = async (files: FileList | null) => {
     if (!files?.length) return;
+    const idx = pi;
     say('Adding images…');
-    let added = 0, full = false;
     try {
       const imported: { file: string; aspect: number }[] = [];
       for (const f of Array.from(files)) {
-        try { imported.push(await importImage(f)); } catch { /* skip unreadable */ }
+        try { const r = await importImage(f); imported.push(r); seen.current.add(r.file); } catch { /* skip unreadable */ }
       }
+      let added = 0;
       editPage((pg) => {
-        let imgs = [...pg.images];
+        const imgs = [...pg.images];
         const cap = cellCount(pg.layout);
         for (const im of imported) {
-          if (imgs.length >= cap) { full = true; break; }
-          imgs.push({ id: newId(), file: im.file, aspect: im.aspect, x: 0, y: 0, w: 0.5, h: 0.5 });
+          if (imgs.length >= cap) break;
+          const base = { id: newId(), file: im.file, aspect: im.aspect, rot: 0, crop: FULL };
+          imgs.push({ ...base, ...(pg.layout === 'free' ? freeBox(pg, im.aspect, imgs.length) : { x: 0, y: 0, w: 0.5, h: 0.5 }) });
           added++;
         }
-        return applyLayout({ ...pg, images: imgs });
-      });
-      // files that didn't fit are not kept
-      if (full) { await deleteImages(imported.slice(added).map((i) => i.file)); say(`Page is full (${cellCount(page.layout)} max). Use a bigger layout or add a page.`); }
+        const { fill: _drop, ...rest } = pg; void _drop;
+        return applyLayout({ ...rest, images: imgs });
+      }, idx);
+      if (added < imported.length) say(`Page is full (${cellCount(page.layout)} max). Use a bigger layout or add a page.`);
       else say(added ? `Added ${added}` : 'Could not read that image');
     } catch { say('Could not add images'); }
     if (fileRef.current) fileRef.current.value = '';
   };
 
   const removeImage = (imgId: string) => {
-    const im = page.images.find((i) => i.id === imgId);
-    editPage((pg) => applyLayout({ ...pg, images: pg.images.filter((i) => i.id !== imgId) }));
+    editPage((pg) => applyLayout({ ...pg, fill: undefined, images: pg.images.filter((i) => i.id !== imgId) }));
     setSel(null);
-    if (im && !proj.pages.some((pg) => pg.images.some((i) => i.id !== imgId && i.file === im.file))) deleteImages([im.file]);
   };
 
   const updateImage = (imgId: string, patch: Partial<PageImage>) =>
-    editPage((pg) => ({ ...pg, images: pg.images.map((i) => (i.id === imgId ? { ...i, ...patch } : i)) }));
+    editPage((pg) => ({ ...pg, fill: undefined, images: pg.images.map((i) => (i.id === imgId ? { ...i, ...patch } : i)) }));
+
+  /** Change crop/rotation: new shape fits inside the old box, same centre. */
+  const reshape = (imgId: string, patch: Partial<Pick<PageImage, 'rot' | 'crop'>>) =>
+    editPage((pg) => ({
+      ...pg, fill: undefined,
+      images: pg.images.map((i) => {
+        if (i.id !== imgId) return i;
+        const n = { ...i, ...patch };
+        const a = dispAspect(n), bw = i.w * pg.widthMm, bh = i.h * pg.heightMm;
+        let w = bw, h = bw / a;
+        if (h > bh) { h = bh; w = bh * a; }
+        const fw = w / pg.widthMm, fh = h / pg.heightMm;
+        return { ...n, x: i.x + (i.w - fw) / 2, y: i.y + (i.h - fh) / 2, w: fw, h: fh };
+      }),
+    }));
+  const rotate = (im: PageImage, dir: 1 | -1) => {
+    let crop = im.crop;
+    for (let k = 0; k < (dir === 1 ? 1 : 3); k++) crop = rotateCrop(crop);
+    reshape(im.id, { rot: (im.rot + dir + 4) % 4, crop });
+  };
+  const setCropSide = (im: PageImage, side: 'l' | 'r' | 't' | 'b', v: number) => {
+    const c = im.crop;
+    const l = side === 'l' ? v : c.x, t = side === 't' ? v : c.y;
+    const r = side === 'r' ? v : 1 - c.x - c.w, b = side === 'b' ? v : 1 - c.y - c.h;
+    const crop: Crop = { x: l, y: t, w: Math.max(0.1, 1 - l - r), h: Math.max(0.1, 1 - t - b) };
+    reshape(im.id, { crop });
+  };
+  /** Make the photo cover its grid cell exactly (crops the overflow). */
+  const fillCell = (im: PageImage) => editPage((pg) => {
+    const k = pg.images.findIndex((i) => i.id === im.id);
+    const cell = cellRect(pg, k);
+    if (!cell) return pg;
+    const crop = cropToAspect(im, (cell.w * pg.widthMm) / (cell.h * pg.heightMm));
+    return { ...pg, images: pg.images.map((i) => (i.id === im.id ? { ...i, crop, ...cell } : i)) };
+  });
+  const fitCell = (im: PageImage) => editPage((pg) => {
+    const k = pg.images.findIndex((i) => i.id === im.id);
+    if (!cellRect(pg, k)) return pg;
+    const imgs = pg.images.map((i) => (i.id === im.id ? { ...i, crop: FULL } : i));
+    return applyLayout({ ...pg, images: imgs });
+  });
+  const order = (imgId: string, to: 'front' | 'back') => editPage((pg) => {
+    const m = pg.images.find((i) => i.id === imgId)!;
+    const rest = pg.images.filter((i) => i.id !== imgId);
+    return { ...pg, layout: pg.layout === 'free' ? 'free' : pg.layout, images: to === 'front' ? [...rest, m] : [m, ...rest] };
+  });
+  const swap = (aId: string, bId: string, startCx: number, startCy: number) => editPage((pg) => {
+    const a = pg.images.find((i) => i.id === aId)!, b = pg.images.find((i) => i.id === bId)!;
+    const bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    return {
+      ...pg, fill: undefined,
+      images: pg.images.map((i) => i.id === aId ? { ...i, x: bc.x - i.w / 2, y: bc.y - i.h / 2 }
+        : i.id === bId ? { ...i, x: startCx - i.w / 2, y: startCy - i.h / 2 } : i),
+    };
+  });
+  const fillWith = (wMm: number, hMm: number) => {
+    const src = selImage ?? page.images[0];
+    if (!src) { say('Add a photo first'); return; }
+    const out = fillPage(page, src, wMm, hMm);
+    if (out === page) { say('That size does not fit on this page'); return; }
+    editPage(() => out); setSel(null);
+  };
+  const relayout = (pg: Page) => {
+    if (pg.fill && pg.images[0]) return fillPage(pg, pg.images[0], pg.fill.wMm, pg.fill.hMm);
+    return applyLayout(pg);
+  };
 
   const setLayout = (l: LayoutId) => editPage((pg) => {
     const imgs = pg.images.slice(0, cellCount(l));
-    deleteImages(pg.images.slice(cellCount(l)).map((i) => i.file));
-    return applyLayout({ ...pg, layout: l, images: imgs });
+    return applyLayout({ ...pg, fill: undefined, layout: l, images: imgs });
   });
 
-  const goPage = (i: number) => { setPi(i); setSel(null); };
+  const addText = () => {
+    const t: PageText = { id: newId(), text: 'Text', x: 0.1, y: 0.1, sizePt: 24, color: '#12151C', bold: false };
+    editPage((pg) => ({ ...pg, texts: [...pg.texts, t] }));
+    setSel(t.id); setTab('text');
+  };
+  const updateText = (tid: string, patch: Partial<PageText>) =>
+    editPage((pg) => ({ ...pg, texts: pg.texts.map((t) => (t.id === tid ? { ...t, ...patch } : t)) }));
 
+  const goPage = (i: number) => { setPi(i); setSel(null); };
   const addPage = () => { edit((p) => ({ ...p, pages: [...p.pages, newPage(p.widthMm, p.heightMm)] })); goPage(proj.pages.length); };
   const dupPage = (i: number) => {
     edit((p) => {
       const src = p.pages[i];
-      const copy: Page = { ...src, id: newId(), images: src.images.map((im) => ({ ...im, id: newId() })) };
+      const copy: Page = { ...src, id: newId(), images: src.images.map((im) => ({ ...im, id: newId() })), texts: src.texts.map((t) => ({ ...t, id: newId() })) };
       const pages = [...p.pages]; pages.splice(i + 1, 0, copy);
       return { ...p, pages };
     });
     goPage(i + 1);
   };
   const delPage = (i: number) => {
-    if (proj.pages.length < 2) { say("A project needs at least one page"); return; }
-    if (!confirm(`Delete page ${i + 1}?`)) return;
-    const gone = proj.pages[i];
-    const keep = new Set(proj.pages.filter((_, k) => k !== i).flatMap((pg) => pg.images.map((im) => im.file)));
-    deleteImages(gone.images.map((im) => im.file).filter((f) => !keep.has(f)));
+    if (proj.pages.length < 2) { say('A project needs at least one page'); return; }
+    if (!confirm(`Delete page ${i + 1}? You can undo this.`)) return;
     edit((p) => ({ ...p, pages: p.pages.filter((_, k) => k !== i) }));
     goPage(Math.max(0, Math.min(i, proj.pages.length - 2)));
   };
@@ -110,7 +229,6 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
     edit((p) => { const pages = [...p.pages]; const [m] = pages.splice(from, 1); pages.splice(to, 0, m); return { ...p, pages }; });
     goPage(to);
   };
-
   const renameProject = () => {
     const n = prompt('Project name', proj.name)?.trim();
     if (n) edit((p) => ({ ...p, name: n }));
@@ -119,19 +237,24 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
   if (exporting) return <Export project={proj} onBack={() => setExporting(false)} />;
 
   const sz = presetOf(page.widthMm, page.heightMm) ?? `${fmt(page.widthMm, unit)}×${fmt(page.heightMm, unit)} ${unit}`;
+  const cropSides = selImage ? { l: selImage.crop.x, t: selImage.crop.y, r: 1 - selImage.crop.x - selImage.crop.w, b: 1 - selImage.crop.y - selImage.crop.h } : null;
+  const gridLayout = page.layout !== 'free';
 
   return (
     <div className="screen">
       <header className="topbar">
-        <button className="icon-btn" onClick={() => { saveProject(proj); onBack(); }} aria-label="Back"><Back /></button>
+        <button className="icon-btn" onClick={leave} aria-label="Back"><Back /></button>
         <button className="title-btn" onClick={renameProject}>
           <div className="t1">{proj.name}</div>
           <div className="t2 muted">{saved ? 'Saved' : 'Saving…'} · {sz}</div>
         </button>
+        <button className="icon-btn" disabled={!hist.u} onClick={undo} aria-label="Undo"><Undo /></button>
+        <button className="icon-btn" disabled={!hist.r} onClick={redo} aria-label="Redo"><Redo /></button>
         <button className="btn primary" onClick={() => setExporting(true)}>Export</button>
       </header>
 
-      <PageCanvas page={page} selectedId={sel} onSelect={setSel} onChange={updateImage} />
+      <PageCanvas page={page} pageNo={pi + 1} pageNumbers={proj.pageNumbers} unit={unit} selectedId={sel} onSelect={setSel}
+        onChange={updateImage} onChangeText={updateText} onSwap={swap} />
 
       <div className="pager">
         <button className="icon-btn" disabled={pi === 0} onClick={() => goPage(pi - 1)} aria-label="Previous page"><Left /></button>
@@ -145,13 +268,35 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
             <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => addImages(e.target.files)} />
             <div className="row">
               <button className="btn primary" onClick={() => fileRef.current?.click()}><Plus /> Add images</button>
-              {sel && <button className="btn danger-outline" onClick={() => removeImage(sel)}><Trash /> Remove selected</button>}
+              {selImage && <button className="btn danger-outline" onClick={() => removeImage(selImage.id)}><Trash /> Remove</button>}
             </div>
-            <p className="muted small">{page.images.length} of {cellCount(page.layout)} on this page. Drag to move, drag corners to resize.</p>
+            {selImage && (
+              <>
+                <div className="tools">
+                  <button className="btn" onClick={() => rotate(selImage, -1)} aria-label="Rotate left"><RotL /></button>
+                  <button className="btn" onClick={() => rotate(selImage, 1)} aria-label="Rotate right"><RotR /></button>
+                  <button className={'btn' + (cropOpen ? ' on' : '')} onClick={() => setCropOpen(!cropOpen)}>Crop</button>
+                  {gridLayout ? <>
+                    <button className="btn" onClick={() => fillCell(selImage)}>Fill cell</button>
+                    <button className="btn" onClick={() => fitCell(selImage)}>Fit cell</button>
+                  </> : null}
+                  <button className="btn" onClick={() => order(selImage.id, 'front')}>To front</button>
+                  <button className="btn" onClick={() => order(selImage.id, 'back')}>To back</button>
+                </div>
+                {cropOpen && cropSides && (['l', 'r', 't', 'b'] as const).map((s) => (
+                  <label key={s} className="slider">
+                    <span>{{ l: 'Left', r: 'Right', t: 'Top', b: 'Bottom' }[s]}</span>
+                    <input type="range" min={0} max={0.45} step={0.01} value={cropSides[s]} onChange={(e) => setCropSide(selImage, s, Number(e.target.value))} />
+                    <span className="muted val">{Math.round(cropSides[s] * 100)}%</span>
+                  </label>
+                ))}
+              </>
+            )}
+            <p className="muted small">{page.images.length}{page.layout === 'free' ? '' : ` of ${cellCount(page.layout)}`} on this page. Drag to move, corners to resize{page.layout !== '1' && page.images.length > 1 ? ', drop on another photo to swap' : ''}.</p>
             <div className="strip">
               {page.images.map((im) => (
                 <button key={im.id} className={'strip-item' + (im.id === sel ? ' on' : '')} onClick={() => setSel(im.id)}>
-                  <PageThumb page={{ ...page, images: [{ ...im, x: 0, y: 0, w: 1, h: 1 }], widthMm: im.aspect * 100, heightMm: 100, border: { ...page.border, on: false } }} maxW={72} maxH={72} />
+                  <PageThumb page={{ ...page, texts: [], images: [{ ...im, x: 0, y: 0, w: 1, h: 1 }], widthMm: dispAspect(im) * 100, heightMm: 100, border: { ...page.border, on: false } }} maxW={64} maxH={64} />
                 </button>
               ))}
             </div>
@@ -161,17 +306,26 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
           <div className="panel-body">
             <div className="chips">
               {LAYOUTS.map((l) => <button key={l.id} className={'chip' + (page.layout === l.id ? ' on' : '')} onClick={() => setLayout(l.id)}>{l.label}</button>)}
+              {page.layout === 'free' && <button className="chip on">Custom</button>}
             </div>
-            <Slider label="Margins" value={page.marginMm} max={50} unit={unit} onChange={(v) => editPage((pg) => applyLayout({ ...pg, marginMm: v }))} />
-            <Slider label="Spacing" value={page.spacingMm} max={30} unit={unit} onChange={(v) => editPage((pg) => applyLayout({ ...pg, spacingMm: v }))} />
-            <p className="muted small">Changing layout, margins or spacing re-places the images on this page.</p>
+            <Slider label="Margins" value={page.marginMm} max={50} unit={unit} onChange={(v) => editPage((pg) => relayout({ ...pg, marginMm: v }))} />
+            <Slider label="Spacing" value={page.spacingMm} max={30} unit={unit} onChange={(v) => editPage((pg) => relayout({ ...pg, spacingMm: v }))} />
+            <div className="field" style={{ marginTop: 4 }}>Print a photo at exact size (fills the page with copies)
+              <div className="chips">
+                {PHOTO_SIZES.map(([n, w, h]) => {
+                  const c = fitCount(page, w, h);
+                  return <button key={n} className="chip" disabled={!c} onClick={() => fillWith(w, h)}>{n}{c ? ` · ${c}` : ''}</button>;
+                })}
+              </div>
+              <span className="muted small">Uses the selected photo (or the first one). Counts show how many fit with the current margins and spacing.</span>
+            </div>
           </div>
         )}
         {tab === 'size' && <SizePanel key={page.id} page={page} unit={unit} onUnit={(u) => edit((p) => ({ ...p, unit: u }))}
           onApply={(w, h, all) => {
             edit((p) => ({
               ...p, widthMm: w, heightMm: h,
-              pages: p.pages.map((pg, k) => (all || k === pi ? applyLayout({ ...pg, widthMm: w, heightMm: h }) : pg)),
+              pages: p.pages.map((pg, k) => (all || k === pi ? relayout({ ...pg, widthMm: w, heightMm: h }) : pg)),
             }));
             say('Size applied');
           }} />}
@@ -191,6 +345,36 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
                 </label>
               </>
             )}
+          </div>
+        )}
+        {tab === 'text' && (
+          <div className="panel-body">
+            <div className="row">
+              <button className="btn primary" onClick={addText}><Plus /> Add text</button>
+              {selText && <button className="btn danger-outline" onClick={() => { editPage((pg) => ({ ...pg, texts: pg.texts.filter((t) => t.id !== selText.id) })); setSel(null); }}><Trash /> Remove</button>}
+            </div>
+            {selText && (
+              <>
+                <label className="field" style={{ marginTop: 0 }}>Text
+                  <input value={selText.text} onChange={(e) => updateText(selText.id, { text: e.target.value })} />
+                </label>
+                <label className="slider">
+                  <span>Size</span>
+                  <input type="range" min={6} max={120} value={selText.sizePt} onChange={(e) => updateText(selText.id, { sizePt: Number(e.target.value) })} />
+                  <span className="muted val">{selText.sizePt} pt</span>
+                </label>
+                <label className="field-row">Color
+                  <input type="color" value={selText.color} onChange={(e) => updateText(selText.id, { color: e.target.value })} />
+                </label>
+                <label className="field-row">Bold
+                  <input type="checkbox" checked={selText.bold} onChange={(e) => updateText(selText.id, { bold: e.target.checked })} />
+                </label>
+              </>
+            )}
+            <label className="field-row">Page numbers (all pages)
+              <input type="checkbox" checked={proj.pageNumbers} onChange={(e) => edit((p) => ({ ...p, pageNumbers: e.target.checked }))} />
+            </label>
+            <p className="muted small">Text uses a standard PDF font (Latin letters only; other characters print as "?").</p>
           </div>
         )}
         {tab === 'pages' && <PagesPanel project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} />}
@@ -337,4 +521,3 @@ function PagesPanel({ project, current, onSelect, onMove, onAdd, onDup, onDel }:
   );
 }
 
-void fromMm;

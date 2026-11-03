@@ -35,9 +35,8 @@ h1{margin:4px 0 0;font-size:28px;font-weight:800}
 .menu .danger{color:var(--danger)}
 .empty{margin-top:32px;text-align:center}
 .thumb{position:relative;box-shadow:0 1px 4px rgba(0,0,0,.25);flex:none;overflow:hidden}
-.desk{flex:1;min-height:0;background:var(--desk);display:grid;place-items:center;overflow:hidden;touch-action:none}
 .pager{display:flex;justify-content:center;align-items:center;gap:12px;background:var(--desk);font-weight:600;font-size:13px}
-.panel{background:var(--surface);border-top:1px solid var(--line);max-height:40vh;overflow-y:auto}
+.panel{background:var(--surface);border-top:1px solid var(--line);height:36vh;flex:none;overflow-y:auto}
 .panel-body{padding:12px 16px;display:flex;flex-direction:column;gap:12px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
 .tabs{display:flex;background:var(--surface);border-top:1px solid var(--line)}
@@ -72,3 +71,14 @@ h1{margin:4px 0 0;font-size:28px;font-weight:800}
 .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;text-align:center;margin-bottom:8px}
 .summary div{display:flex;flex-direction:column}.summary b{font-size:16px}
 .toast{position:absolute;left:16px;right:16px;bottom:140px;background:var(--text);color:var(--bg);padding:12px 16px;border-radius:12px;text-align:center;z-index:9}
+.deskwrap{flex:1;min-height:0;position:relative;background:var(--desk)}
+.desk{position:absolute;inset:0;overflow:auto;display:flex;touch-action:none}
+.desk.zoomed{touch-action:pan-x pan-y}
+.hud{position:absolute;left:50%;top:8px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;pointer-events:none;z-index:4}
+.zoomctl{position:absolute;right:8px;bottom:8px;display:flex;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;z-index:4}
+.zoomctl button{min-width:44px;min-height:44px;border:0;background:none;font-size:20px;font-weight:600}
+.zoomctl .zval{font-size:12px;min-width:56px}
+.pager{background:var(--desk)}
+.tools{display:flex;flex-wrap:wrap;gap:8px}
+.tools .btn{min-width:44px;padding:0 12px}
+.btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}

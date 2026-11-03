@@ -18,3 +18,8 @@ export const Right = () => <I><path d="M9 5l7 7-7 7" /></I>;
 export const Download = () => <I><path d="M12 4v11M7 11l5 5 5-5M5 20h14" /></I>;
 export const Share = () => <I><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6" /></I>;
 export const Edit = () => <I><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" /></I>;
+export const Type = () => <I><path d="M5 6V4h14v2M12 4v16M9 20h6" /></I>;
+export const Undo = () => <I><path d="M9 14L4 9l5-5" /><path d="M4 9h10a6 6 0 0 1 0 12h-3" /></I>;
+export const Redo = () => <I><path d="M15 14l5-5-5-5" /><path d="M20 9H10a6 6 0 0 0 0 12h3" /></I>;
+export const RotL = () => <I><path d="M4 4v6h6" /><path d="M4.5 14a8 8 0 1 0 2-8.5L4 10" /></I>;
+export const RotR = () => <I><path d="M20 4v6h-6" /><path d="M19.5 14a8 8 0 1 1-2-8.5L20 10" /></I>;
