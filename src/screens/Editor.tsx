@@ -7,6 +7,7 @@ import { deleteImages, evenLight as evenLightFile, FULL, importImage, makeCutout
 import RefineEdges from '../RefineEdges';
 import { faceFit, findFaces, mainFace, type Face } from '../vision';
 import { useBack } from '../back';
+import { askConfirm, kindOf, Toast, type ToastKind } from '../notify';
 import PageCanvas, { type SelBox } from '../PageCanvas';
 import PagePill from '../PagePill';
 import CropCard from '../CropCard';
@@ -54,7 +55,8 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   const [exporting, setExporting] = useState(false);
   const [posOpen, setPosOpen] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{ text: string; kind: ToastKind } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [saved, setSaved] = useState(true);
   const [fsize, setFs] = useState({ w: 35, h: 45 });
   const [selTray, setSelTray] = useState<string | null>(null);
@@ -78,7 +80,12 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     return () => clearTimeout(t);
   }, [proj]);
 
-  const say = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(''), 2500); }, []);
+  const say = useCallback((m: string) => {
+    const kind = kindOf(m);
+    setToast({ text: m, kind }); clearTimeout(toastTimer.current);
+    if (kind === 'ok') navigator.vibrate?.(12); else if (kind === 'warn') navigator.vibrate?.([20, 40, 20]);
+    toastTimer.current = setTimeout(() => setToast(null), kind === 'busy' ? 20000 : kind === 'warn' ? 5500 : 3600);
+  }, []);
   const sync = () => setHist({ u: past.current.length, r: future.current.length });
 
   /** Every change goes through here so it can be undone. Quick bursts (slider drags) count as one step. */
@@ -514,11 +521,12 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     });
     goPage(i + 1);
   };
-  const delPage = (i: number) => {
+  const delPage = async (i: number) => {
     if (proj.pages.length < 2) { say('A project needs at least one page'); return; }
-    if (!confirm(`Delete page ${i + 1}? You can undo this.`)) return;
+    if (!(await askConfirm({ title: `Delete page ${i + 1}?`, body: 'You can undo this with the undo button.', ok: 'Delete page', danger: true }))) return;
     edit((p) => ({ ...p, pages: p.pages.filter((_, k) => k !== i) }));
     goPage(Math.max(0, Math.min(i, proj.pages.length - 2)));
+    say(`Page ${i + 1} deleted. Tap undo to bring it back.`);
   };
   const movePage = (from: number, to: number) => {
     if (from === to) return;
@@ -633,7 +641,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
           </div>
         </nav>
 
-        {toast && <div className="toast" role="status">{toast}</div>}
+        {toast && <Toast text={toast.text} kind={toast.kind} onDismiss={() => setToast(null)} />}
         {exporting && <ExportSheet project={proj} onClose={() => setExporting(false)}
           onShow={(pgIdx, id) => { setExporting(false); goPage(pgIdx); setSel([id]); }}
           onShrink={(pgIdx, id, f) => editPage((pg) => {

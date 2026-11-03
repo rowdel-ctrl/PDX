@@ -4,6 +4,7 @@ import { deleteImages } from '../images';
 import { fmt, presetOf } from '../units';
 import PageThumb from '../PageThumb';
 import SettingsSheet from '../SettingsSheet';
+import { askConfirm } from '../notify';
 import SizeSheet from '../SizeSheet';
 import { newPage } from '../storage';
 import { projectFromTemplate, TEMPLATES } from '../templates';
@@ -44,7 +45,7 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
   };
   const del = async (id: string) => {
     const p = list.find((x) => x.id === id)!;
-    if (!confirm(`Delete "${p.name}"? This can't be undone.`)) return;
+    if (!(await askConfirm({ title: `Delete "${p.name}"?`, body: 'The project and its photos are removed from this phone. This cannot be undone.', ok: 'Delete', danger: true }))) return;
     await deleteImages([...new Set([...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]), ...p.tray.map((t) => t.file)])]);
     removeProject(id); refresh(); setMenu(null);
   };

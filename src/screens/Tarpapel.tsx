@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Banner } from '../notify';
 import { buildTarpapelPdf, dpi, MAX_SHEETS, pageCount, plan, type Orient, type TpSettings } from '../tarpapel';
 import { loadPhoto, openPdf, type Source } from '../pdfsource';
 import { savePdf, sharePdf } from '../files';
@@ -223,8 +224,8 @@ export default function Tarpapel({ onBack }: { onBack: () => void }) {
             </label>
           </>
         )}
-        {busy && <p className="muted" role="status">{busy}</p>}
-        {msg && <p role="status">{msg}</p>}
+        {busy && <Banner kind="busy" text={busy} />}
+        {msg && <Banner kind={/fail|could not/i.test(msg) ? 'warn' : 'ok'} text={msg} />}
       </main>
 
       {src && p && (

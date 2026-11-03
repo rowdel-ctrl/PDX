@@ -3,6 +3,7 @@ import { buildTestSheet, getScale, setScale } from './printer';
 import { savePdf, sharePdf } from './files';
 import { Close } from './icons';
 import { Switch } from './ui';
+import { Banner } from './notify';
 
 /** Printer check: print a test sheet, measure it, and let PDX correct for a printer that prints a little small or large. */
 export default function SettingsSheet({ onClose }: { onClose: () => void }) {
@@ -51,7 +52,7 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
         {ratio !== null && !ok && <p className="muted small">That does not look right. The box should measure close to 100 mm.</p>}
         <Switch label="Use this correction" hint={scale !== 1 ? `On: pages are drawn at ${(scale * 100).toFixed(1)}%` : 'Off'} checked={scale !== 1} onChange={apply} />
         <p className="muted small">The correction applies to every PDF you save from now on. Turn it off if you change printers.</p>
-        {msg && <p role="status">{msg}</p>}
+        {msg && <Banner kind={/could not/i.test(msg) ? 'warn' : 'ok'} text={msg} />}
       </div>
     </div>
   );

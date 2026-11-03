@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Banner } from '../notify';
 import { getScale } from '../printer';
 import { findLowRes, LOW_DPI, SHARP_DPI, type LowPhoto } from '../quality';
 import type { Project, Quality } from '../types';
@@ -67,8 +68,8 @@ export default function ExportSheet({ project, onClose, onShrink, onShow }: { pr
         </div>
         <button className="btn primary wide" disabled={!!busy} onClick={() => run('save')}><Download /> Save to Files</button>
         <button className="btn wide" disabled={!!busy} onClick={() => run('share')}><Share /> Share (WhatsApp, Email, other apps)</button>
-        {busy && <p className="muted" role="status">{busy}</p>}
-        {msg && <p role="status">{msg}</p>}
+        {busy && <Banner kind="busy" text={busy} />}
+        {msg && <Banner kind={/fail|could not/i.test(msg) ? 'warn' : 'ok'} text={msg} />}
       </div>
     </div>
   );
