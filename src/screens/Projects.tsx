@@ -1,15 +1,18 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { listProjects, removeProject, saveProject, startProject, type StartKind } from '../storage';
 import { deleteImages } from '../images';
 import { fmt, presetOf } from '../units';
 import PageThumb from '../PageThumb';
-import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Grid, Pages as PagesIcon, Plus, Size } from '../icons';
+import { newPage } from '../storage';
+import { projectFromTemplate, TEMPLATES } from '../templates';
+import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Grid, Pages as PagesIcon, Plus, Size, More } from '../icons';
 
 export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, tab?: 'images' | 'frames' | 'layout') => void; onPoster: () => void }) {
   const [list, setList] = useState(listProjects);
   const [dark, setDark] = useState(document.documentElement.dataset.theme === 'dark');
   const [menu, setMenu] = useState<string | null>(null);
   const refresh = () => setList(listProjects());
+  const thumbs = useMemo(() => TEMPLATES.map((t) => ({ t, page: t.make(newPage(t.w, t.h)) })), []);
 
   const toggle = () => {
     const next = !dark;
@@ -22,6 +25,11 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
     saveProject(project);
     onOpen(project.id, tab);
   };
+  const fromTemplate = (i: number) => {
+    const p = projectFromTemplate(TEMPLATES[i]);
+    saveProject(p);
+    onOpen(p.id, TEMPLATES[i].group === 'Collage' ? 'frames' : 'frames');
+  };
   const rename = (id: string) => {
     const p = list.find((x) => x.id === id)!;
     const name = prompt('Rename project', p.name)?.trim();
@@ -31,28 +39,39 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
   const del = async (id: string) => {
     const p = list.find((x) => x.id === id)!;
     if (!confirm(`Delete "${p.name}"? This can't be undone.`)) return;
-    await deleteImages([...new Set(p.pages.flatMap((pg) => pg.images.map((i) => i.file)))]);
+    await deleteImages([...new Set([...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]), ...p.tray.map((t) => t.file)])]);
     removeProject(id); refresh(); setMenu(null);
   };
+
+  const starts: [StartKind | 'poster', string, () => React.ReactElement, string][] = [
+    ['id', 'ID photos', FrameIcon, 'c1'], ['prints', 'Photo prints', ImageIcon, 'c2'], ['collage', 'Collage', Grid, 'c3'],
+    ['document', 'Document', PagesIcon, 'c4'], ['poster', 'Tarpapel poster', Size, 'c5'], ['blank', 'Blank', Plus, 'c6'],
+  ];
 
   return (
     <div className="screen">
       <header className="topbar">
         <div className="wordmark">PDX</div>
-        <button className="icon-btn" onClick={toggle} aria-label="Toggle dark mode">{dark ? <Sun /> : <Moon />}</button>
+        <button className="icon-btn" onClick={toggle} aria-label="Toggle dark theme">{dark ? <Sun /> : <Moon />}</button>
       </header>
       <main className="scroll pad">
         <h1>What will you make?</h1>
         <div className="starts">
-          {([
-            ['id', 'ID photos', FrameIcon, '#E7EAFF'], ['prints', 'Photo prints', ImageIcon, '#FFE5D6'], ['collage', 'Collage', Grid, '#DDF3E4'],
-            ['document', 'Document', PagesIcon, '#F1E3FA'],
-          ] as [StartKind, string, () => React.ReactElement, string][]).map(([k, label, Ic, bg]) => (
-            <button key={k} className="start" onClick={() => create(k)}><span className="start-ic" style={{ background: bg }}><Ic /></span>{label}</button>
+          {starts.map(([k, label, Ic, cls]) => (
+            <button key={k} className={'start ' + cls} onClick={() => (k === 'poster' ? onPoster() : create(k))}><Ic />{label}</button>
           ))}
-          <button className="start" onClick={onPoster}><span className="start-ic" style={{ background: '#FFF3C4' }}><Size /></span>Tarpapel poster</button>
-          <button className="start" onClick={() => create('blank')}><span className="start-ic" style={{ background: 'var(--accent-soft)' }}><Plus /></span>Blank</button>
         </div>
+
+        <h2 className="sec">Templates</h2>
+        <div className="hscroll">
+          {thumbs.map(({ t, page }, i) => (
+            <button key={t.id} className="tcard" onClick={() => fromTemplate(i)}>
+              <span className="tcard-thumb"><PageThumb page={page} maxW={78} maxH={92} /></span>
+              <span className="tcard-name">{t.name}</span>
+            </button>
+          ))}
+        </div>
+
         <h2 className="sec">Recent</h2>
         {list.length === 0 && <p className="empty muted">Your projects will show up here. Saved on this phone.</p>}
         <div className="cards">
@@ -62,11 +81,13 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
             return (
               <div key={p.id} className="card">
                 <button className="card-main" onClick={() => onOpen(p.id)}>
-                  <div className="card-thumb"><PageThumb page={pg} maxW={140} maxH={150} /></div>
-                  <div className="card-name">{p.name}</div>
-                  <div className="muted small">{sz} · {p.pages.length} {p.pages.length === 1 ? 'page' : 'pages'}</div>
+                  <div className="card-thumb"><PageThumb page={pg} maxW={140} maxH={112} /></div>
+                  <div className="card-info">
+                    <div className="card-name">{p.name}</div>
+                    <div className="muted small">{sz} · {p.pages.length} {p.pages.length === 1 ? 'page' : 'pages'}</div>
+                  </div>
                 </button>
-                <button className="dots" aria-label="Project options" onClick={() => setMenu(menu === p.id ? null : p.id)}>⋯</button>
+                <button className="dots" aria-label="Project options" onClick={() => setMenu(menu === p.id ? null : p.id)}><More /></button>
                 {menu === p.id && (
                   <div className="menu">
                     <button onClick={() => rename(p.id)}><Edit /> Rename</button>

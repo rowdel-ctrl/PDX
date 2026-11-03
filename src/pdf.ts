@@ -1,4 +1,4 @@
-import { PDFDocument, PDFFont, rgb, StandardFonts } from 'pdf-lib';
+import { degrees, PDFDocument, PDFFont, rgb, StandardFonts } from 'pdf-lib';
 import type { Project, Quality } from './types';
 import { exportBytes } from './images';
 import { borderRect, cropMarkSegments, frameCrop } from './layout';
@@ -30,7 +30,11 @@ export async function buildPdf(p: Project, quality: Quality, onProgress?: (n: nu
       const key = `${im.file}|${im.rot}|${JSON.stringify(im.crop)}`;
       let e = embedded.get(key);
       if (!e) { e = await doc.embedJpg(await exportBytes(im.file, im.rot, im.crop, quality)); embedded.set(key, e); }
-      page.drawImage(e, { x: im.x * W, y: H - (im.y + im.h) * H, width: im.w * W, height: im.h * H });
+      const a = ((im.angle ?? 0) * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a);
+      // bottom-left corner after rotating about the centre (screen coords, y down), then to pdf coords
+      const cx = (im.x + im.w / 2) * W, cy = (im.y + im.h / 2) * H, hw = (im.w * W) / 2, hh = (im.h * H) / 2;
+      const bx = cx + (-hw * cs - hh * sn), by = cy + (-hw * sn + hh * cs);
+      page.drawImage(e, { x: bx, y: H - by, width: im.w * W, height: im.h * H, rotate: degrees(-(im.angle ?? 0)) });
     }
     for (const f of pg.frames) {
       if (!f.file) continue;
@@ -62,7 +66,9 @@ export async function buildPdf(p: Project, quality: Quality, onProgress?: (n: nu
     }
     for (const t of pg.texts) {
       const f = t.bold ? bold : regular;
-      page.drawText(clean(f, t.text), { x: t.x * W, y: H - t.y * H - 0.85 * t.sizePt, size: t.sizePt, font: f, color: hex(t.color) });
+      const a = ((t.angle ?? 0) * Math.PI) / 180, d = 0.85 * t.sizePt;
+      // baseline start = top-left corner + (0, d) rotated clockwise about the corner
+      page.drawText(clean(f, t.text), { x: t.x * W - d * Math.sin(a), y: H - (t.y * H + d * Math.cos(a)), size: t.sizePt, font: f, color: hex(t.color), rotate: degrees(-(t.angle ?? 0)) });
     }
     if (p.pageNumbers) {
       const txt = String(i + 1), size = 10;

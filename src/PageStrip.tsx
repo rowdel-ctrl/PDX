@@ -2,12 +2,12 @@ import { useState } from 'react';
 import type { Project } from './types';
 import PageThumb from './PageThumb';
 import { useReorder } from './reorder';
-import { Copy, Plus, Trash } from './icons';
+import { Copy, Grid, Plus, Trash } from './icons';
 
 /** Canva-style row of page thumbnails under the canvas. */
-export default function PageStrip({ project, current, onSelect, onMove, onAdd, onDup, onDel }: {
+export default function PageStrip({ project, current, onSelect, onMove, onAdd, onDup, onDel, onGrid }: {
   project: Project; current: number; onSelect: (i: number) => void; onMove: (from: number, to: number) => void;
-  onAdd: () => void; onDup: () => void; onDel: () => void;
+  onAdd: () => void; onDup: () => void; onDel: () => void; onGrid: () => void;
 }) {
   const [menu, setMenu] = useState(false);
   const { ref, drag, bind } = useReorder((i) => { if (i === current) setMenu((m) => !m); else { setMenu(false); onSelect(i); } }, (f, t) => { setMenu(false); onMove(f, t); });
@@ -30,6 +30,7 @@ export default function PageStrip({ project, current, onSelect, onMove, onAdd, o
         ))}
         <button className="pcard add" onClick={onAdd} aria-label="Add page"><Plus /></button>
       </div>
+      <button className="strip-grid" onClick={onGrid} aria-label="Show all pages"><Grid /></button>
     </div>
   );
 }

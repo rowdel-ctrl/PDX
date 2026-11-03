@@ -9,24 +9,28 @@ import { fmt } from './units';
 const SNAP_PX = 8;
 const PT_MM = 25.4 / 72;
 const GUIDE = '#FF2D95';
+const PRIMARY = '#4355B9';
+export const PAGE_HIT = '__page__';
 
 type Guides = { v: number[]; h: number[] };
 type Size = { w: number; h: number };
+type B = { x: number; y: number; w: number; h: number };
+export interface SelBox { x: number; y: number; w: number; h: number }
 
-function useImg(im: PageImage) {
+function useVariant(file: string, rot: number, crop = FULL, maxPx = 1400) {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   useEffect(() => {
+    if (!file) { setImg(null); return; }
     let on = true;
-    variantUrl(im.file, im.rot, im.crop, 1400)
-      .then((u) => { const i = new window.Image(); i.onload = () => on && setImg(i); i.src = u; }).catch(() => {});
+    variantUrl(file, rot, crop, maxPx).then((u) => { const i = new window.Image(); i.onload = () => on && setImg(i); i.src = u; }).catch(() => {});
     return () => { on = false; };
-  }, [im.file, im.rot, im.crop]);
+  }, [file, rot, crop, maxPx]);
   return img;
 }
 
-/** Snap a node's box to page center/edges/margins and other items. Mutates node position. */
-function snap(node: Konva.Node, others: { x: number; y: number; w: number; h: number }[], S: Size, m: number): Guides {
-  const w = node.width() * node.scaleX(), h = node.height() * node.scaleY();
+/** Snap a node's bounding box to page centre/edges/margins and other items. Moves the node. */
+function snap(node: Konva.Node, others: B[], S: Size, m: number): Guides {
+  const r = node.getClientRect({ skipStroke: true, skipShadow: true, relativeTo: node.getLayer() ?? undefined });
   const xs = [0, S.w / 2, S.w, m, S.w - m], ys = [0, S.h / 2, S.h, m, S.h - m];
   for (const o of others) { xs.push(o.x, o.x + o.w / 2, o.x + o.w); ys.push(o.y, o.y + o.h / 2, o.y + o.h); }
   const best = (edges: number[], cands: number[]) => {
@@ -34,112 +38,91 @@ function snap(node: Konva.Node, others: { x: number; y: number; w: number; h: nu
     for (const e of edges) for (const c of cands) if (Math.abs(c - e) < Math.abs(d)) { d = c - e; at = c; }
     return Math.abs(d) <= SNAP_PX ? { d, at } : null;
   };
-  const sx = best([node.x(), node.x() + w / 2, node.x() + w], xs);
-  const sy = best([node.y(), node.y() + h / 2, node.y() + h], ys);
+  const sx = best([r.x, r.x + r.width / 2, r.x + r.width], xs);
+  const sy = best([r.y, r.y + r.height / 2, r.y + r.height], ys);
   if (sx) node.x(node.x() + sx.d);
   if (sy) node.y(node.y() + sy.d);
   return { v: sx ? [sx.at] : [], h: sy ? [sy.at] : [] };
 }
 
-interface Common {
-  S: Size; m: number; unit: Unit; page: Page; selected: boolean;
-  onSelect: () => void; onTap: () => void; setGuides: (g: Guides) => void; setHud: (s: string) => void;
-  others: { x: number; y: number; w: number; h: number }[];
+interface Ctx {
+  S: Size; kz: number; m: number; unit: Unit; page: Page;
+  selected: Set<string>; adjust: boolean; dropTarget: string | null; border: FrameBorder; cropMarks: boolean;
+  reg: (id: string) => (n: Konva.Node | null) => void;
+  pick: (id: string, how: 'tap' | 'drag') => void;
+  dragStart: (id: string) => void;
+  dragMove: (id: string, node: Konva.Node) => void;
+  dragEnd: (id: string) => void;
+  setHud: (s: string) => void;
+  setGuides: (g: Guides) => void;
 }
 
-function useSnapHaptics(setGuides: (g: Guides) => void) {
-  const last = useRef('');
-  return (g: Guides | null) => {
-    const key = g ? `${g.v}|${g.h}` : '';
-    if (g && key !== last.current && (g.v.length || g.h.length)) navigator.vibrate?.(8);
-    last.current = key;
-    setGuides(g ?? { v: [], h: [] });
-  };
-}
-
-function Item({ im, c, onChange, onSwap }: {
-  im: PageImage; c: Common; onChange: (p: Partial<PageImage>) => void;
+function ImageItem({ im, c, onChange, onSwap }: {
+  im: PageImage; c: Ctx; onChange: (p: Partial<PageImage>) => void;
   onSwap: (otherId: string, startCx: number, startCy: number) => void;
 }) {
-  const { S, m, unit, page } = c;
-  const img = useImg(im);
-  const ref = useRef<Konva.Image>(null);
-  const tr = useRef<Konva.Transformer>(null);
+  const node = useRef<Konva.Image | null>(null);
+  const { S, page, unit } = c;
+  const img = useVariant(im.file, im.rot, im.crop);
   const start = useRef({ x: 0, y: 0 });
-  const guides = useSnapHaptics(c.setGuides);
-  useEffect(() => {
-    if (c.selected && tr.current && ref.current) { tr.current.nodes([ref.current]); tr.current.getLayer()?.batchDraw(); }
-  }, [c.selected, img]);
   const mmW = page.widthMm / S.w, mmH = page.heightMm / S.h;
-  const hud = (n: Konva.Node) => c.setHud(`${fmt(n.width() * n.scaleX() * mmW, unit)} × ${fmt(n.height() * n.scaleY() * mmH, unit)} ${unit}  ·  x ${fmt(n.x() * mmW, unit)}  y ${fmt(n.y() * mmH, unit)}`);
+  const hud = (n: Konva.Node) => c.setHud(`${fmt(n.width() * n.scaleX() * mmW, unit)} × ${fmt(n.height() * n.scaleY() * mmH, unit)} ${unit}  ·  ${Math.round(n.rotation())}°`);
+  const regFn = c.reg(im.id);
   return (
-    <>
-      <KImage
-        ref={ref} image={img ?? undefined} x={im.x * S.w} y={im.y * S.h} width={im.w * S.w} height={im.h * S.h}
-        draggable onClick={c.onSelect} onTap={c.onSelect} fill="#C9D3FF"
-        onDragStart={(e) => { c.onSelect(); start.current = { x: e.target.x(), y: e.target.y() }; }}
-        onDragMove={(e) => { guides(snap(e.target, c.others, S, m)); hud(e.target); }}
-        onDragEnd={(e) => {
-          guides(null); c.setHud('');
-          const n = e.target, cx = n.x() + n.width() / 2, cy = n.y() + n.height() / 2;
-          if (page.layout !== '1' && page.images.length > 1) {
-            const hit = page.images.find((o) => o.id !== im.id && cx > o.x * S.w && cx < (o.x + o.w) * S.w && cy > o.y * S.h && cy < (o.y + o.h) * S.h);
-            if (hit) { n.position(start.current); onSwap(hit.id, (start.current.x + n.width() / 2) / S.w, (start.current.y + n.height() / 2) / S.h); return; }
-          }
-          onChange({ x: n.x() / S.w, y: n.y() / S.h });
-        }}
-        onTransform={(e) => hud(e.target)}
-        onTransformEnd={() => {
-          c.setHud('');
-          const n = ref.current!;
-          const w = n.width() * n.scaleX(), h = n.height() * n.scaleY();
-          n.scaleX(1); n.scaleY(1);
-          onChange({ x: n.x() / S.w, y: n.y() / S.h, w: w / S.w, h: h / S.h });
-        }}
-      />
-      {c.selected && (
-        <Transformer
-          ref={tr} rotateEnabled={false} keepRatio flipEnabled={false}
-          enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
-          anchorSize={22} anchorCornerRadius={11} anchorStroke="#3D4DFF" anchorFill="#fff" borderStroke="#3D4DFF"
-          boundBoxFunc={(o, n) => (n.width < 20 || n.height < 20 ? o : n)}
-        />
-      )}
-    </>
+    <KImage
+      ref={(n) => { node.current = n; regFn(n); }} image={img ?? undefined}
+      x={(im.x + im.w / 2) * S.w} y={(im.y + im.h / 2) * S.h} width={im.w * S.w} height={im.h * S.h}
+      offsetX={(im.w * S.w) / 2} offsetY={(im.h * S.h) / 2} rotation={im.angle ?? 0} fill="#C9D3FF"
+      draggable={!im.locked} onClick={() => c.pick(im.id, 'tap')} onTap={() => c.pick(im.id, 'tap')}
+      onDragStart={(e) => { start.current = { x: e.target.x(), y: e.target.y() }; c.dragStart(im.id); }}
+      onDragMove={(e) => { c.dragMove(im.id, e.target); hud(e.target); }}
+      onDragEnd={(e) => {
+        const n = e.target;
+        if (page.layout !== '1' && page.layout !== 'free' && page.images.length > 1 && c.selected.size <= 1) {
+          const hit = page.images.find((o) => o.id !== im.id && n.x() > o.x * S.w && n.x() < (o.x + o.w) * S.w && n.y() > o.y * S.h && n.y() < (o.y + o.h) * S.h);
+          if (hit) { c.setGuides({ v: [], h: [] }); c.setHud(''); n.position(start.current); onSwap(hit.id, start.current.x / S.w, start.current.y / S.h); c.dragEnd('__none__'); return; }
+        }
+        c.dragEnd(im.id);
+      }}
+      onTransform={(e) => hud(e.target)}
+      onTransformEnd={() => {
+        c.setHud('');
+        const n = node.current!;
+        const w = n.width() * n.scaleX(), h = n.height() * n.scaleY();
+        n.scaleX(1); n.scaleY(1);
+        let a = n.rotation() % 360; if (a > 180) a -= 360; if (a <= -180) a += 360;
+        onChange({ x: n.x() / S.w - w / S.w / 2, y: n.y() / S.h - h / S.h / 2, w: w / S.w, h: h / S.h, angle: Math.round(a * 10) / 10 });
+      }}
+    />
   );
 }
 
-
-function FrameItem({ f, c, kz, adjust, dropTarget, border, cropMarks, onChange }: {
-  f: Frame; c: Common; kz: number; adjust: boolean; dropTarget: boolean; border: FrameBorder; cropMarks: boolean; onChange: (p: Partial<Frame>) => void;
-}) {
-  const { S, m, unit, page } = c;
-  const [img, setImg] = useState<HTMLImageElement | null>(null);
-  useEffect(() => {
-    if (!f.file) { setImg(null); return; }
-    let on = true;
-    variantUrl(f.file, f.rot, FULL, 1400).then((u) => { const i = new window.Image(); i.onload = () => on && setImg(i); i.src = u; }).catch(() => {});
-    return () => { on = false; };
-  }, [f.file, f.rot]);
-  const guides = useSnapHaptics(c.setGuides);
+function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial<Frame>) => void }) {
+  const node = useRef<Konva.Group | null>(null);
+  const { S, kz, page, unit, border } = c;
+  const img = useVariant(f.file, f.rot, FULL, 1400);
+  const selected = c.selected.has(f.id), single = c.selected.size === 1 && selected;
+  const adjusting = c.adjust && single && !!img && !f.locked;
   const fw = f.w * S.w, fh = f.h * S.h;
   const crop = frameCrop(f, page.widthMm, page.heightMm);
-  const mmW = page.widthMm / S.w, mmH = page.heightMm / S.h;
   const pan = useRef({ px: 0, py: 0, cx: 0, cy: 0 });
-  const imgRef = useRef<Konva.Image>(null);
+  const dropTarget = c.dropTarget === f.id;
+  const regFn = c.reg(f.id);
   return (
     <Group
+      ref={(n) => { node.current = n; regFn(n); }}
       x={f.x * S.w} y={f.y * S.h} width={fw} height={fh}
-      draggable={!adjust} onClick={c.onTap} onTap={c.onTap} onDragStart={c.onSelect}
-      onDragMove={(e) => { guides(snap(e.target, c.others, S, m)); c.setHud(`${fmt(f.w * page.widthMm, unit)} × ${fmt(f.h * page.heightMm, unit)} ${unit}  ·  x ${fmt(e.target.x() * mmW, unit)}  y ${fmt(e.target.y() * mmH, unit)}`); }}
-      onDragEnd={(e) => { guides(null); c.setHud(''); onChange({ x: e.target.x() / S.w, y: e.target.y() / S.h }); }}
+      draggable={!adjusting && !f.locked} onClick={() => c.pick(f.id, 'tap')} onTap={() => c.pick(f.id, 'tap')}
+      onDragStart={() => c.dragStart(f.id)}
+      onDragMove={(e) => { c.dragMove(f.id, e.target); c.setHud(`${fmt(f.w * page.widthMm, unit)} × ${fmt(f.h * page.heightMm, unit)} ${unit}`); }}
+      onDragEnd={() => c.dragEnd(f.id)}
     >
       <Rect width={fw} height={fh} fill={img ? '#fff' : dropTarget ? '#FFD0E6' : '#EEF0FF'} />
       {img && (
         <KImage
-          ref={imgRef} image={img} width={fw} height={fh}
+          image={img} width={fw} height={fh}
           crop={{ x: crop.x * img.width, y: crop.y * img.height, width: crop.w * img.width, height: crop.h * img.height }}
-          draggable={adjust && c.selected}
+          draggable={adjusting}
           onDragStart={(e) => { const p = e.target.getStage()!.getPointerPosition()!; pan.current = { px: p.x, py: p.y, cx: f.cx, cy: f.cy }; }}
           onDragMove={(e) => {
             const p = e.target.getStage()!.getPointerPosition()!;
@@ -153,62 +136,73 @@ function FrameItem({ f, c, kz, adjust, dropTarget, border, cropMarks, onChange }
         <KText width={fw} height={fh} align="center" verticalAlign="middle" fontSize={Math.max(9, Math.min(fw, fh) / 6)} fill="#5B6372" listening={false}
           text={f.file ? '…' : `Drop photo\n${fmt(f.w * page.widthMm, unit)}×${fmt(f.h * page.heightMm, unit)} ${unit}`} />
       )}
-      {cropMarks && img && cropMarkSegments(f.w * page.widthMm, f.h * page.heightMm).map((q, i) => (
+      {c.cropMarks && img && cropMarkSegments(f.w * page.widthMm, f.h * page.heightMm).map((q, i) => (
         <Line key={i} points={q.map((v) => v * kz)} stroke="#333" strokeWidth={1} listening={false} />
       ))}
       {img && border.on && (() => {
-        const bwMm = border.widthMm, r = borderRect(f.w * page.widthMm, f.h * page.heightMm, bwMm, border.place);
-        return <Rect x={r.x * kz} y={r.y * kz} width={r.w * kz} height={r.h * kz} stroke={border.color} strokeWidth={Math.max(1, bwMm * kz)} listening={false} />;
+        const r = borderRect(f.w * page.widthMm, f.h * page.heightMm, border.widthMm, border.place);
+        return <Rect x={r.x * kz} y={r.y * kz} width={r.w * kz} height={r.h * kz} stroke={border.color} strokeWidth={Math.max(1, border.widthMm * kz)} listening={false} />;
       })()}
-      {(dropTarget || c.selected || !img) && (
-        <Rect width={fw} height={fh} listening={false} stroke={dropTarget ? GUIDE : c.selected ? '#3D4DFF' : '#8a93a6'}
-          strokeWidth={dropTarget || c.selected ? 2 : 1} dash={img ? undefined : [5, 4]} />
+      {(dropTarget || !img) && (
+        <Rect width={fw} height={fh} listening={false} stroke={dropTarget ? GUIDE : '#8a93a6'} strokeWidth={dropTarget ? 2 : 1} dash={img ? undefined : [5, 4]} />
       )}
     </Group>
   );
 }
 
-function TextItem({ t, c, kz, onChange }: { t: PageText; c: Common; kz: number; onChange: (p: Partial<PageText>) => void }) {
-  const { S, m, unit, page } = c;
-  const ref = useRef<Konva.Text>(null);
-  const tr = useRef<Konva.Transformer>(null);
-  const guides = useSnapHaptics(c.setGuides);
-  useEffect(() => {
-    if (c.selected && tr.current && ref.current) { tr.current.nodes([ref.current]); tr.current.getLayer()?.batchDraw(); }
-  }, [c.selected, t.text, t.sizePt, t.bold]);
+function TextItem({ t, c, onChange }: { t: PageText; c: Ctx; onChange: (p: Partial<PageText>) => void }) {
+  const node = useRef<Konva.Text | null>(null);
+  const { S, kz, page, unit } = c;
   const mmW = page.widthMm / S.w, mmH = page.heightMm / S.h;
+  const regFn = c.reg(t.id);
   return (
-    <>
-      <KText
-        ref={ref} text={t.text || ' '} x={t.x * S.w} y={t.y * S.h} fontSize={t.sizePt * PT_MM * kz} lineHeight={1}
-        fontFamily="Helvetica, Arial, sans-serif" fontStyle={t.bold ? 'bold' : 'normal'} fill={t.color} wrap="none"
-        draggable onClick={c.onSelect} onTap={c.onSelect} onDragStart={c.onSelect}
-        onDragMove={(e) => { guides(snap(e.target, c.others, S, m)); c.setHud(`x ${fmt(e.target.x() * mmW, unit)}  y ${fmt(e.target.y() * mmH, unit)} ${unit}`); }}
-        onDragEnd={(e) => { guides(null); c.setHud(''); onChange({ x: e.target.x() / S.w, y: e.target.y() / S.h }); }}
-      />
-      {c.selected && <Transformer ref={tr} rotateEnabled={false} resizeEnabled={false} borderStroke="#3D4DFF" borderDash={[4, 3]} padding={4} />}
-    </>
+    <KText
+      ref={(n) => { node.current = n; regFn(n); }} text={t.text || ' '} x={t.x * S.w} y={t.y * S.h} rotation={t.angle ?? 0}
+      fontSize={t.sizePt * PT_MM * kz} lineHeight={1} fontFamily="Helvetica, Arial, sans-serif" fontStyle={t.bold ? 'bold' : 'normal'} fill={t.color} wrap="none"
+      draggable={!t.locked} onClick={() => c.pick(t.id, 'tap')} onTap={() => c.pick(t.id, 'tap')}
+      onDragStart={() => c.dragStart(t.id)}
+      onDragMove={(e) => { c.dragMove(t.id, e.target); c.setHud(`x ${fmt(e.target.x() * mmW, unit)}  y ${fmt(e.target.y() * mmH, unit)} ${unit}`); }}
+      onDragEnd={() => c.dragEnd(t.id)}
+      onTransform={(e) => c.setHud(`${Math.round(e.target.rotation())}°`)}
+      onTransformEnd={() => {
+        c.setHud('');
+        const n = node.current!; let a = n.rotation() % 360; if (a > 180) a -= 360; if (a <= -180) a += 360;
+        onChange({ angle: Math.round(a * 10) / 10, x: n.x() / S.w, y: n.y() / S.h });
+      }}
+    />
   );
 }
 
-export default function PageCanvas({ page, pageNo, pageNumbers, unit, selectedId, onSelect, onChange, onChangeText, onSwap, onChangeFrame, adjust, dropTarget, border, cropMarks, hitRef }: {
-  page: Page; pageNo: number; pageNumbers: boolean; unit: Unit; selectedId: string | null;
-  onSelect: (id: string | null, tap?: boolean) => void;
-  onChange: (imgId: string, p: Partial<PageImage>) => void;
-  onChangeText: (id: string, p: Partial<PageText>) => void;
+export default function PageCanvas(p: {
+  page: Page; pageNo: number; pageNumbers: boolean; unit: Unit; selectedIds: string[];
+  onPick: (id: string, how: 'tap' | 'drag') => void; onBlank: () => void;
+  onMoveMany: (moves: { id: string; x: number; y: number }[]) => void;
+  onChange: (imgId: string, patch: Partial<PageImage>) => void;
+  onChangeText: (id: string, patch: Partial<PageText>) => void;
+  onChangeFrame: (id: string, patch: Partial<Frame>) => void;
   onSwap: (aId: string, bId: string, startCx: number, startCy: number) => void;
-  onChangeFrame: (id: string, p: Partial<Frame>) => void;
   adjust: boolean; dropTarget: string | null; border: FrameBorder; cropMarks: boolean;
   hitRef: React.MutableRefObject<((x: number, y: number) => string | null) | null>;
+  onSelBox: (b: SelBox | null) => void; onDragging: (d: boolean) => void;
+  children?: React.ReactNode;
 }) {
+  const { page, selectedIds } = p;
+  const wrap = useRef<HTMLDivElement>(null);
   const desk = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
+  const trRef = useRef<Konva.Transformer>(null);
   const [avail, setAvail] = useState({ w: 300, h: 400 });
   const [zoom, setZoom] = useState(1);
   const [guides, setGuides] = useState<Guides>({ v: [], h: [] });
   const [hud, setHud] = useState('');
   const anchor = useRef<{ fx: number; fy: number; vx: number; vy: number } | null>(null);
   const zoomRef = useRef(1); zoomRef.current = zoom;
+  const nodes = useRef(new Map<string, Konva.Node>());
+  const regs = useRef(new Map<string, (n: Konva.Node | null) => void>());
+  const starts = useRef(new Map<string, { x: number; y: number }>());
+  const dragOrigin = useRef<{ id: string; x: number; y: number } | null>(null);
+  const hapticKey = useRef('');
+  const lastBox = useRef('');
 
   useEffect(() => {
     const el = desk.current!;
@@ -217,7 +211,6 @@ export default function PageCanvas({ page, pageNo, pageNumbers, unit, selectedId
     return () => ro.disconnect();
   }, []);
 
-  // Keep the point under the pinch/zoom centre in place after zooming.
   useLayoutEffect(() => {
     const a = anchor.current, el = desk.current;
     if (a && el) { el.scrollLeft = a.fx * el.scrollWidth - a.vx; el.scrollTop = a.fy * el.scrollHeight - a.vy; }
@@ -231,7 +224,7 @@ export default function PageCanvas({ page, pageNo, pageNumbers, unit, selectedId
     setZoom(nz);
   };
 
-  // Two-finger pinch to zoom, two-finger drag to pan.
+  // two-finger pinch to zoom and pan
   useEffect(() => {
     const el = desk.current!;
     let d0 = 0, z0 = 1, mid0 = { x: 0, y: 0 };
@@ -266,51 +259,135 @@ export default function PageCanvas({ page, pageNo, pageNumbers, unit, selectedId
   const S = { w: page.widthMm * kz, h: page.heightMm * kz };
   const m = page.marginMm * kz;
   const bw = page.border.on ? Math.max(1, page.border.widthMm * kz) : 0;
-  const boxes = (skip: string) => [
-    ...page.images.filter((i) => i.id !== skip).map((i) => ({ x: i.x * S.w, y: i.y * S.h, w: i.w * S.w, h: i.h * S.h })),
-    ...page.frames.filter((f) => f.id !== skip).map((f) => ({ x: f.x * S.w, y: f.y * S.h, w: f.w * S.w, h: f.h * S.h })),
+  const selected = new Set(selectedIds);
+
+  const boxes = (skip: Set<string>): B[] => [
+    ...page.images.filter((i) => !skip.has(i.id)).map((i) => ({ x: i.x * S.w, y: i.y * S.h, w: i.w * S.w, h: i.h * S.h })),
+    ...page.frames.filter((f) => !skip.has(f.id)).map((f) => ({ x: f.x * S.w, y: f.y * S.h, w: f.w * S.w, h: f.h * S.h })),
   ];
-  hitRef.current = (cx, cy) => {
+
+  const reg = (id: string) => {
+    let fn = regs.current.get(id);
+    if (!fn) { fn = (n) => { if (n) nodes.current.set(id, n); else nodes.current.delete(id); }; regs.current.set(id, fn); }
+    return fn;
+  };
+
+  const haptic = (g: Guides) => {
+    const key = `${g.v}|${g.h}`;
+    if ((g.v.length || g.h.length) && key !== hapticKey.current) navigator.vibrate?.(8);
+    hapticKey.current = (g.v.length || g.h.length) ? key : '';
+  };
+
+  const ctx: Ctx = {
+    S, kz, m, unit: p.unit, page, selected, adjust: p.adjust, dropTarget: p.dropTarget, border: p.border, cropMarks: p.cropMarks,
+    reg, setHud, setGuides,
+    pick: p.onPick,
+    dragStart: (id) => {
+      p.onPick(id, 'drag');
+      const group = selected.has(id) ? selectedIds : [id];
+      starts.current = new Map();
+      for (const sid of group) { const n = nodes.current.get(sid); if (n) starts.current.set(sid, { x: n.x(), y: n.y() }); }
+      const n = nodes.current.get(id);
+      dragOrigin.current = n ? { id, x: n.x(), y: n.y() } : null;
+      p.onDragging(true);
+    },
+    dragMove: (id, node) => {
+      if (starts.current.size <= 1) { const g = snap(node, boxes(new Set([id])), S, m); haptic(g); setGuides(g); return; }
+      const o = starts.current.get(id)!;
+      const dx = node.x() - o.x, dy = node.y() - o.y;
+      for (const [sid, st] of starts.current) if (sid !== id) nodes.current.get(sid)?.position({ x: st.x + dx, y: st.y + dy });
+      node.getLayer()?.batchDraw();
+    },
+    dragEnd: (id) => {
+      setGuides({ v: [], h: [] }); setHud(''); p.onDragging(false); hapticKey.current = '';
+      const moves: { id: string; x: number; y: number }[] = [];
+      for (const sid of starts.current.keys()) {
+        const n = nodes.current.get(sid); if (!n) continue;
+        const im = page.images.find((i) => i.id === sid);
+        moves.push(im ? { id: sid, x: n.x() / S.w - im.w / 2, y: n.y() / S.h - im.h / 2 } : { id: sid, x: n.x() / S.w, y: n.y() / S.h });
+      }
+      starts.current = new Map();
+      if (id !== '__none__' && moves.length) p.onMoveMany(moves);
+    },
+  };
+
+  // attach the transformer to the selected nodes
+  const only = selectedIds.length === 1 ? selectedIds[0] : null;
+  const onlyImage = only ? page.images.find((i) => i.id === only) : undefined;
+  const onlyText = only ? page.texts.find((t) => t.id === only) : undefined;
+  useEffect(() => {
+    const ns = selectedIds.map((id) => nodes.current.get(id)).filter((n): n is Konva.Node => !!n);
+    trRef.current?.nodes(ns);
+    trRef.current?.getLayer()?.batchDraw();
+  });
+
+  // tell the editor where the selection is, so its toolbar can sit next to it
+  const reportBox = () => {
+    const stage = stageRef.current, w = wrap.current;
+    const ns = selectedIds.map((id) => nodes.current.get(id)).filter((n): n is Konva.Node => !!n);
+    if (!stage || !w || !ns.length) { if (lastBox.current !== '') { lastBox.current = ''; p.onSelBox(null); } return; }
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const n of ns) { const r = n.getClientRect({ relativeTo: stage }); x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x + r.width); y1 = Math.max(y1, r.y + r.height); }
+    const sr = stage.container().getBoundingClientRect(), wr = w.getBoundingClientRect();
+    const box = { x: sr.left - wr.left + x0, y: sr.top - wr.top + y0, w: x1 - x0, h: y1 - y0 };
+    const key = [box.x, box.y, box.w, box.h].map((v) => Math.round(v)).join(',');
+    if (key !== lastBox.current) { lastBox.current = key; p.onSelBox(box); }
+  };
+  useEffect(() => { reportBox(); });
+  useEffect(() => {
+    const el = desk.current!;
+    el.addEventListener('scroll', reportBox, { passive: true });
+    return () => el.removeEventListener('scroll', reportBox);
+  });
+
+  p.hitRef.current = (cx, cy) => {
     const r = stageRef.current?.container().getBoundingClientRect();
     if (!r) return null;
     const x = cx - r.left, y = cy - r.top;
     const f = [...page.frames].reverse().find((q) => x >= q.x * S.w && x <= (q.x + q.w) * S.w && y >= q.y * S.h && y <= (q.y + q.h) * S.h);
-    return f ? f.id : null;
+    if (f) return f.id;
+    return x >= 0 && y >= 0 && x <= S.w && y <= S.h ? PAGE_HIT : null;
   };
-  const common = (id: string): Common => ({
-    S, m, unit, page, selected: id === selectedId, onSelect: () => onSelect(id), onTap: () => onSelect(id, true), setGuides, setHud, others: boxes(id),
+
+  const locked = selectedIds.some((id) => {
+    const it = page.images.find((i) => i.id === id) ?? page.frames.find((f) => f.id === id) ?? page.texts.find((t) => t.id === id);
+    return !!it?.locked;
   });
+  const canResize = !!onlyImage && !locked;
+  const canRotate = (!!onlyImage || !!onlyText) && !locked;
   const pnSize = 10 * PT_MM * kz;
 
   return (
-    <div className="deskwrap">
+    <div className="deskwrap" ref={wrap}>
       <div className={'desk' + (zoom > 1 ? ' zoomed' : '')} ref={desk}>
         <div style={{ margin: 'auto', padding: pad }}>
           <div style={{ width: S.w, height: S.h, boxShadow: '0 2px 14px rgba(0,0,0,.25)' }}>
-            <Stage ref={stageRef} width={S.w} height={S.h}
-              onMouseDown={(e) => e.target === e.target.getStage() && onSelect(null)}
-              onTouchStart={(e) => e.target === e.target.getStage() && onSelect(null)}>
+            <Stage ref={stageRef} width={S.w} height={S.h}>
               <Layer>
-                <Rect width={S.w} height={S.h} fill={page.background} onClick={() => onSelect(null)} onTap={() => onSelect(null)} />
+                <Rect width={S.w} height={S.h} fill={page.background} onClick={p.onBlank} onTap={p.onBlank} />
                 {m > 2 && <Rect x={m} y={m} width={S.w - 2 * m} height={S.h - 2 * m} stroke="#8a93a6" dash={[5, 4]} strokeWidth={1} listening={false} />}
-                {page.images.map((im) => (
-                  <Item key={im.id} im={im} c={common(im.id)} onChange={(p) => onChange(im.id, p)} onSwap={(b, cx, cy) => onSwap(im.id, b, cx, cy)} />
-                ))}
-                {page.frames.map((f) => (
-                  <FrameItem key={f.id} f={f} c={common(f.id)} kz={kz} adjust={adjust} dropTarget={dropTarget === f.id} border={border} cropMarks={cropMarks} onChange={(p) => onChangeFrame(f.id, p)} />
-                ))}
+                {page.images.map((im) => <ImageItem key={im.id} im={im} c={ctx} onChange={(pt) => p.onChange(im.id, pt)} onSwap={(b, cx, cy) => p.onSwap(im.id, b, cx, cy)} />)}
+                {page.frames.map((f) => <FrameItem key={f.id} f={f} c={ctx} onChange={(pt) => p.onChangeFrame(f.id, pt)} />)}
                 {bw > 0 && <Rect x={bw / 2} y={bw / 2} width={S.w - bw} height={S.h - bw} stroke={page.border.color} strokeWidth={bw} listening={false} />}
-                {page.texts.map((t) => <TextItem key={t.id} t={t} kz={kz} c={common(t.id)} onChange={(p) => onChangeText(t.id, p)} />)}
-                {pageNumbers && <KText text={String(pageNo)} x={0} width={S.w} align="center" y={S.h - 8 * kz - 0.85 * pnSize} fontSize={pnSize} lineHeight={1} fontFamily="Helvetica, Arial, sans-serif" fill="#333" listening={false} />}
+                {page.texts.map((t) => <TextItem key={t.id} t={t} c={ctx} onChange={(pt) => p.onChangeText(t.id, pt)} />)}
+                {p.pageNumbers && <KText text={String(p.pageNo)} x={0} width={S.w} align="center" y={S.h - 8 * kz - 0.85 * pnSize} fontSize={pnSize} lineHeight={1} fontFamily="Helvetica, Arial, sans-serif" fill="#333" listening={false} />}
               </Layer>
-              <Layer listening={false}>
-                {guides.v.map((x) => <Line key={'v' + x} points={[x, 0, x, S.h]} stroke={GUIDE} strokeWidth={1} dash={[6, 4]} />)}
-                {guides.h.map((y) => <Line key={'h' + y} points={[0, y, S.w, y]} stroke={GUIDE} strokeWidth={1} dash={[6, 4]} />)}
+              <Layer>
+                {guides.v.map((x) => <Line key={'v' + x} points={[x, 0, x, S.h]} stroke={GUIDE} strokeWidth={1} dash={[6, 4]} listening={false} />)}
+                {guides.h.map((y) => <Line key={'h' + y} points={[0, y, S.w, y]} stroke={GUIDE} strokeWidth={1} dash={[6, 4]} listening={false} />)}
+                <Transformer
+                  ref={trRef} rotateEnabled={canRotate} resizeEnabled={canResize} keepRatio flipEnabled={false}
+                  enabledAnchors={canResize ? ['top-left', 'top-right', 'bottom-left', 'bottom-right'] : []}
+                  rotationSnaps={[0, 90, 180, 270]} rotationSnapTolerance={6} rotateAnchorOffset={26}
+                  anchorSize={22} anchorCornerRadius={11} anchorStroke={PRIMARY} anchorFill="#fff" borderStroke={PRIMARY} borderDash={locked ? [4, 3] : undefined}
+                  padding={onlyText ? 4 : 0} boundBoxFunc={(o, n) => (n.width < 20 || n.height < 20 ? o : n)}
+                />
               </Layer>
             </Stage>
           </div>
         </div>
       </div>
+      {p.children}
       {hud && <div className="hud">{hud}</div>}
       <div className="zoomctl">
         <button onClick={() => zoomTo(zoom / 1.5)} disabled={zoom <= 1} aria-label="Zoom out">−</button>
