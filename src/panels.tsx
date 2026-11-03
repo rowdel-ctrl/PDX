@@ -136,6 +136,75 @@ function FramesTab() {
   );
 }
 
+/** Photo print and ID sizes. Tap to add a frame of that size to this page, or hold and drag it onto the page. */
+const SIZE_CARDS: [string, string, number, number][] = [
+  ['Wallet', '2×3 in', 50.8, 76.2], ['2R', '2.5×3.5 in', 63.5, 88.9], ['3R', '3.5×5 in', 88.9, 127], ['4R', '4×6 in', 101.6, 152.4],
+  ['5R', '5×7 in', 127, 177.8], ['6R', '6×8 in', 152.4, 203.2], ['8R', '8×10 in', 203.2, 254],
+  ['Passport', '35×45 mm', 35, 45], ['2×2 in', '50.8 mm', 50.8, 50.8], ['1.5×1.5 in', '38.1 mm', 38.1, 38.1], ['1×1 in', '25.4 mm', 25.4, 25.4], ['3×4 cm', '30×40 mm', 30, 40],
+];
+
+function SizeCards() {
+  const ed = useEd();
+  const [land, setLand] = useState(false);
+  const [ghost, setGhost] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const d = useRef<{ timer: number; on: boolean; sx: number; sy: number; w: number; h: number } | null>(null);
+  useEffect(() => {
+    if (!ghost) return;
+    const stop = (e: TouchEvent) => e.preventDefault();
+    window.addEventListener('touchmove', stop, { passive: false });
+    return () => window.removeEventListener('touchmove', stop);
+  }, [!!ghost]);
+  const pageRect = () => (document.querySelector('.deskwrap .konvajs-content canvas') as HTMLCanvasElement | null)?.getBoundingClientRect() ?? null;
+  const dims = (w: number, h: number) => (land ? { w: h, h: w } : { w, h });
+  const down = (e: React.PointerEvent, w0: number, h0: number) => {
+    const { w, h } = dims(w0, h0);
+    d.current = { timer: 0, on: false, sx: e.clientX, sy: e.clientY, w, h };
+    const target = e.currentTarget as HTMLElement, pid = e.pointerId;
+    d.current.timer = window.setTimeout(() => {
+      if (!d.current) return;
+      d.current.on = true; navigator.vibrate?.(15);
+      try { target.setPointerCapture(pid); } catch { /* ignore */ }
+      const r = pageRect(), k = r ? r.width / ed.page.widthMm : 1;
+      setGhost({ x: d.current.sx, y: d.current.sy, w: w * k, h: h * k });
+    }, 260);
+  };
+  const move = (e: React.PointerEvent) => {
+    const c = d.current; if (!c) return;
+    if (c.on) setGhost((g) => (g ? { ...g, x: e.clientX, y: e.clientY } : g));
+    else if (Math.hypot(e.clientX - c.sx, e.clientY - c.sy) > 10) { window.clearTimeout(c.timer); d.current = null; }
+  };
+  const up = (e: React.PointerEvent) => {
+    const c = d.current; d.current = null; if (!c) return;
+    window.clearTimeout(c.timer);
+    if (!c.on) { ed.addFrameSized(c.w, c.h); return; }            // a tap: put it at a free spot
+    setGhost(null);
+    const r = pageRect();
+    if (r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+      ed.addFrameSized(c.w, c.h, { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height });
+    }
+  };
+  const cancel = () => { if (d.current) window.clearTimeout(d.current.timer); d.current = null; setGhost(null); };
+  return (
+    <div className="field">Photo sizes
+      <span className="muted small">Tap to add a frame to this page, or hold and drag it where you want it.</span>
+      <div className="seg"><button className={!land ? 'on' : ''} onClick={() => setLand(false)}>Portrait</button><button className={land ? 'on' : ''} onClick={() => setLand(true)}>Landscape</button></div>
+      <div className="strip">
+        {SIZE_CARDS.map(([name, label, w0, h0]) => {
+          const { w, h } = dims(w0, h0), k = 46 / Math.max(w, h);
+          return (
+            <button key={name} className="tcard size-card" onPointerDown={(e) => down(e, w0, h0)} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel} onContextMenu={(e) => e.preventDefault()}>
+              <span className="tcard-thumb"><span className="size-box" style={{ width: w * k, height: h * k }} /></span>
+              <span className="tcard-name">{name}</span>
+              <span className="tcard-sub">{label}</span>
+            </button>
+          );
+        })}
+      </div>
+      {ghost && <div className="drag-ghost" style={{ left: ghost.x - ghost.w / 2, top: ghost.y - ghost.h / 2, width: ghost.w, height: ghost.h }} />}
+    </div>
+  );
+}
+
 function TemplatesTab() {
   const ed = useEd();
   const thumbs = useMemo(() => TEMPLATES.map((t) => ({ t, page: t.make(newPage(t.w, t.h)) })), []);
@@ -146,7 +215,8 @@ function TemplatesTab() {
   const save = () => { saveMyTemplate(name || 'My template', ed.page); setMine(myTemplates()); setName(''); ed.say('Saved. Find it under My templates.'); };
   return (
     <>
-      <p className="muted small" style={{ margin: 0 }}>Tap a template to use it on this page. You can undo it.</p>
+      <SizeCards />
+      <p className="muted small" style={{ margin: 0 }}>Templates replace the page layout. You can undo it.</p>
       <div className="field">My templates
         {mineThumbs.length > 0 && (
           <div className="strip">

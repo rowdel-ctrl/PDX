@@ -178,6 +178,19 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     if (autoFace) for (const i of ids) centerFace(i, true);
   };
 
+  /** Add one empty frame of an exact size: at a free spot, or centred on `at` (page fractions) when dropped. */
+  const addFrameSized = (w0: number, h0: number, at?: { x: number; y: number }) => {
+    let w = w0, h = h0;
+    if (at) {
+      const f = emptyFrame(Math.min(Math.max(0, at.x - w / page.widthMm / 2), Math.max(0, 1 - w / page.widthMm)) * page.widthMm, Math.min(Math.max(0, at.y - h / page.heightMm / 2), Math.max(0, 1 - h / page.heightMm)) * page.heightMm, w, h, page.widthMm, page.heightMm);
+      editPage((pg) => ({ ...pg, layout: 'free', frames: [...pg.frames, f] })); setSel([f.id]); return;
+    }
+    let spot = freeSpot(page, w, h);
+    if (!spot) { spot = freeSpot(page, h, w); if (spot) [w, h] = [h, w]; }
+    if (!spot) { say('No room for another frame on this page'); return; }
+    const f = emptyFrame(spot.x, spot.y, w, h, page.widthMm, page.heightMm);
+    editPage((pg) => ({ ...pg, frames: [...pg.frames, f] })); setSel([f.id]);
+  };
   const addFrame = () => {
     let { w, h } = fsize;
     let spot = freeSpot(page, w, h);
@@ -641,7 +654,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   const ed: Ed = {
     proj, page, pi, unit, sel: selIds, selImage, selFrame, selText, say, edit, editPage, panel, setPanel, addTab, setAddTab,
     addPhotos, addFromLibrary, removeFromLibrary, selTray, setSelTray, hit, setOver,
-    fsize, setFsize: (w, h) => setFs({ w, h }), addFrame, fillWithFrames, clearFrames: () => { editPage((pg) => ({ ...pg, frames: [] })); setSel([]); },
+    fsize, setFsize: (w, h) => setFs({ w, h }), addFrame, addFrameSized, fillWithFrames, clearFrames: () => { editPage((pg) => ({ ...pg, frames: [] })); setSel([]); },
     placePhoto, updateFrame: (fid, patch) => updateFrame(fid, patch), resizeFrame, rotateFrame, copyToAll,
     detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, refineEdges, evenLight, enhancePhoto, upscalePhoto, setBgAll, setBg,
     rotateImage, setCropSide, resetCrop, fillCell, fitCell, addText, updateText, setLayout, relayout, fillWith, applyTemplate,

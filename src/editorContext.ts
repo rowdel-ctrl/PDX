@@ -23,7 +23,8 @@ export interface Ed {
   setOver: (id: string | null) => void;
   // frames
   fsize: { w: number; h: number }; setFsize: (w: number, h: number) => void;
-  addFrame: () => void; fillWithFrames: () => void; clearFrames: () => void;
+  addFrame: () => void;
+  addFrameSized: (w: number, h: number, at?: { x: number; y: number }) => void; fillWithFrames: () => void; clearFrames: () => void;
   placePhoto: (frameId: string, t: TrayItem) => void;
   updateFrame: (id: string, patch: Partial<Frame>) => void;
   resizeFrame: (f: Frame, w: number, h: number) => void;
