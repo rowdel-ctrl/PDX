@@ -122,8 +122,8 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
     const steps = overlap ? [
       'Print every page at 100% ("Actual size"). Do not choose "Fit to page".',
       `Cut along the dashed lines (the scissors show where each line starts). On every sheet cut the left and top edges. Also cut the bottom edge in the last row and the right edge in the last column.`,
-      'Start with sheet 1. Put glue on the hatched strip on its right edge, lay sheet 2 on top and line up the picture. Repeat along the row.',
-      'Build the next row the same way. Put glue on the hatched strip along the bottom of the row above and lay the new row on top.',
+      'Start with sheet 1. Put glue along the right edge of its picture, the strip named GLUE in the border. Lay sheet 2 on top and line up the picture. Repeat along the row.',
+      'Build the next row the same way. Put glue along the bottom edge of the picture in the row above (the strip named GLUE in the border) and lay the new row on top.',
     ] : [
       'Print every page at 100% ("Actual size"). Do not choose "Fit to page".',
       'Cut along the dashed lines on all four sides of every sheet.',
@@ -168,7 +168,7 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
     const ly = p.sheetH - pad - 4;
     pg.drawLine({ start: { x: X(pad), y: Y(ly) }, end: { x: X(pad + 14), y: Y(ly) }, thickness: 0.9, color: LINE, dashArray: [4, 2.5] });
     text('Cut line', pad + 16, ly - 1.6, base * 0.8, font, GRAY);
-    if (overlap) { pg.drawRectangle({ x: X(pad + 38), y: Y(ly + 1.5), width: X(10), height: X(3), borderColor: HATCH, borderWidth: 0.4, borderDashArray: [1.5, 1.5] }); text('Glue strip (hatched)', pad + 50, ly - 1.6, base * 0.8, font, GRAY); }
+    if (overlap) { pg.drawRectangle({ x: X(pad + 38), y: Y(ly + 1.5), width: X(10), height: X(3), borderColor: HATCH, borderWidth: 0.4, borderDashArray: [1.5, 1.5] }); text('Glue strip (named in the border)', pad + 50, ly - 1.6, base * 0.8, font, GRAY); }
     text('Made with PDX', p.sheetW - pad - 22, ly - 1.6, base * 0.8, font, GRAY);
   }
 
@@ -181,20 +181,16 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
       page.drawImage(image, { x: X(m + p.img.x - ox), y: Y(m + p.img.y - oy + p.img.h), width: X(p.img.w), height: X(p.img.h) });
       page.pushOperators(popGraphicsState());
 
-      // glue strips: the next sheet to the right / below goes on top of these
-      if (overlap && s.glueShade && o > 0) {
-        const strips: [number, number, number, number, boolean][] = [];
-        if (c < p.cols - 1) strips.push([m + p.cw - o, m, o, p.ch, true]);
-        if (r < p.rows - 1) strips.push([m, m + p.ch - o, p.cw, o, false]);
-        for (const [sx, sy, sw, sh, vertical] of strips) {
-          page.pushOperators(pushGraphicsState(), rectangle(X(sx), Y(sy + sh), X(sw), X(sh)), clip(), endPath());
-          for (let t = -sh; t < sw; t += 4) page.drawLine({ start: { x: X(sx + t), y: Y(sy + sh) }, end: { x: X(sx + t + sh), y: Y(sy) }, thickness: 0.4, color: HATCH });
-          page.pushOperators(popGraphicsState());
-          if ((vertical ? sw : sh) >= 6) {
-            const lw = bold.widthOfTextAtSize('GLUE', 6.5);
-            if (vertical) page.drawText('GLUE', { x: X(sx + sw / 2) + 2.3, y: Y(sy + sh / 2) - lw / 2, size: 6.5, font: bold, color: LINE, rotate: degrees(90) });
-            else page.drawText('GLUE', { x: X(sx + sw / 2) - lw / 2, y: Y(sy + sh / 2) - 2.3, size: 6.5, font: bold, color: LINE });
-          }
+      // glue strips: the next sheet to the right / below goes on top of the picture edge. Marked in the border only, never on the picture.
+      if (overlap && s.glueShade && o > 0 && m >= 4.5) {
+        const sz = 5.5, tx = `GLUE strip: ${Math.round(o * 10) / 10} mm, on the picture edge beside this border`;
+        const tw = bold.widthOfTextAtSize(tx, sz);
+        if (c < p.cols - 1 && p.ch > 130) {
+          // right border (stays under the next sheet): rotated text, plus a short bracket that shows the strip width on the border's top edge
+          page.drawText(tx, { x: X(m + p.cw + m / 2) + sz * 0.35, y: Y(m + p.ch - 6), size: sz, font: bold, color: INK, rotate: degrees(90) });
+        }
+        if (r < p.rows - 1 && p.cw > 150) {
+          page.drawText(tx, { x: X(m + 72), y: Y(m + p.ch + m / 2) - sz * 0.35, size: sz, font: bold, color: INK });
         }
       }
 

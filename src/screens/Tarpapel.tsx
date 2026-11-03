@@ -215,7 +215,7 @@ export default function Tarpapel({ onBack }: { onBack: () => void }) {
             <section className="tp-card">
               <div className="tp-head"><h3>Cut guides on every sheet</h3></div>
               <Switch label="Cut lines with scissors" hint="Thin dashed line shows where to cut" checked={s.cutLines} onChange={(b) => set({ cutLines: b })} />
-              <Switch label="Mark the glue strip" hint={overlap ? 'Light hatching where the next sheet goes' : 'Only for overlap and glue'} checked={s.glueShade && overlap} onChange={(b) => set({ glueShade: b })} />
+              <Switch label="Mark the glue strip" hint={overlap ? 'A small note in the border, never on the picture' : 'Only for overlap and glue'} checked={s.glueShade && overlap} onChange={(b) => set({ glueShade: b })} />
               <Switch label="Assembly guide page" hint="A map and steps as the first page" checked={s.guidePage} onChange={(b) => set({ guidePage: b })} />
             </section>
 
