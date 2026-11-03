@@ -43,6 +43,9 @@ export const TEMPLATES: Template[] = [
   grid('id-pp-a4', 'Passport 35×45 · A4', 'ID photos', 210, 297, 35, 45, 8, 5),
   grid('id-22-a4', '2×2 in · A4', 'ID photos', 210, 297, 50.8, 50.8, 8, 5),
   grid('id-11-a4', '1×1 in · A4', 'ID photos', 210, 297, 25.4, 25.4, 8, 4),
+  grid('id-15-a4', '1.5×1.5 in · A4', 'ID photos', 210, 297, 38.1, 38.1, 8, 4),
+  grid('id-34-a4', '3×4 cm · A4', 'ID photos', 210, 297, 30, 40, 8, 4),
+  grid('id-pp-legal', 'Passport 35×45 · Legal', 'ID photos', 215.9, 330.2, 35, 45, 8, 5),
   grid('id-pp-4r', 'Passport · 4R sideways', 'ID photos', 152.4, 101.6, 35, 45, 1.5, 3),
   {
     id: 'id-mixed', name: '2×2 in + passport · A4', group: 'ID photos', w: 210, h: 297,
