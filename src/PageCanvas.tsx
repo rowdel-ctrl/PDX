@@ -92,6 +92,7 @@ function ImageItem({ im, c, onChange, onSwap }: {
       onTransformEnd={() => {
         c.setHud('');
         const n = node.current!;
+        if (c.selected.size > 1) { n.scaleX(1); n.scaleY(1); return; }
         const w = n.width() * n.scaleX(), h = n.height() * n.scaleY();
         n.scaleX(1); n.scaleY(1);
         let a = n.rotation() % 360; if (a > 180) a -= 360; if (a <= -180) a += 360;
@@ -203,7 +204,9 @@ function TextItem({ t, c, onChange }: { t: PageText; c: Ctx; onChange: (p: Parti
       onTransform={(e) => c.setHud(`${Math.round(e.target.rotation())}°`)}
       onTransformEnd={() => {
         c.setHud('');
-        const n = node.current!; let a = n.rotation() % 360; if (a > 180) a -= 360; if (a <= -180) a += 360;
+        const n = node.current!;
+        if (c.selected.size > 1) { n.scaleX(1); n.scaleY(1); return; }
+        let a = n.rotation() % 360; if (a > 180) a -= 360; if (a <= -180) a += 360;
         onChange({ angle: Math.round(a * 10) / 10, x: n.x() / S.w, y: n.y() / S.h });
       }}
     />
@@ -214,6 +217,7 @@ export default function PageCanvas(p: {
   page: Page; pageNo: number; pageNumbers: boolean; unit: Unit; selectedIds: string[];
   onPick: (id: string, how: 'tap' | 'drag') => void; onBlank: () => void;
   onMoveMany: (moves: { id: string; x: number; y: number }[]) => void;
+  onScaleMany: (f: number, ox: number, oy: number, nx: number, ny: number) => void;
   onChange: (imgId: string, patch: Partial<PageImage>) => void;
   onChangeText: (id: string, patch: Partial<PageText>) => void;
   onChangeFrame: (id: string, patch: Partial<Frame>) => void;
@@ -435,7 +439,9 @@ export default function PageCanvas(p: {
     const it = page.images.find((i) => i.id === id) ?? page.frames.find((f) => f.id === id) ?? page.texts.find((t) => t.id === id);
     return !!it?.locked;
   });
-  const canResize = !!onlyImage && !locked;
+  const multi = selectedIds.length > 1;
+  const canResize = (!!onlyImage || multi) && !locked;
+  const grp = useRef<{ x: number; y: number; w: number } | null>(null);
   const canRotate = (!!onlyImage || !!onlyText) && !locked;
   const pnSize = 10 * PT_MM * kz;
 
@@ -461,6 +467,14 @@ export default function PageCanvas(p: {
                 <Transformer
                   ref={trRef} rotateEnabled={canRotate} resizeEnabled={canResize} keepRatio flipEnabled={false}
                   enabledAnchors={canResize ? ['top-left', 'top-right', 'bottom-left', 'bottom-right'] : []}
+                  onTransformStart={() => { const t = trRef.current; if (t && multi) grp.current = { x: t.x(), y: t.y(), w: t.width() }; }}
+                  onTransformEnd={() => {
+                    const t = trRef.current, g = grp.current; grp.current = null;
+                    if (!t || !g || !multi || g.w <= 0) return;
+                    const f = t.width() / g.w;
+                    if (Math.abs(f - 1) < 0.002) return;
+                    p.onScaleMany(f, g.x / S.w, g.y / S.h, t.x() / S.w, t.y() / S.h);
+                  }}
                   rotationSnaps={[0, 90, 180, 270]} rotationSnapTolerance={6} rotateAnchorOffset={26}
                   anchorSize={22} anchorCornerRadius={11} anchorStroke={PRIMARY} anchorFill="#fff" borderStroke={PRIMARY} borderDash={locked ? [4, 3] : undefined}
                   padding={onlyText ? 4 : 0} boundBoxFunc={(o, n) => (n.width < 20 || n.height < 20 ? o : n)}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayItem } from '../types';
 import { listProjects, newPage, saveProject } from '../storage';
 import { applyLayout, cellCount, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
-import { alignItems, distributeItems, findItem, gapItems, mapSelected, reorder, type AlignMode, type AnyItem } from '../arrange';
+import { alignItems, distributeItems, findItem, gapItems, groupBox, mapSelected, reorder, scaleItems, type AlignMode, type AnyItem } from '../arrange';
 import { deleteImages, FULL, importImage, makeCutout, newId } from '../images';
 import { faceFit, findFaces, mainFace, type Face } from '../vision';
 import { useBack } from '../back';
@@ -394,7 +394,9 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     const made: string[] = [];
     editPage((pg) => {
       const ids = new Set(selIds);
-      const off = (o: { x: number; y: number }, w: number, h: number) => ({ x: clampN(o.x + 0.03, 0, Math.max(0, 1 - w)), y: clampN(o.y + 0.03, 0, Math.max(0, 1 - h)) });
+      const gb = groupBox(pg, selIds);
+      const dx = gb ? clampN(0.03, -gb.x, Math.max(0, 1 - gb.x - gb.w)) : 0.03, dy = gb ? clampN(0.03, -gb.y, Math.max(0, 1 - gb.y - gb.h)) : 0.03;
+      const off = (o: { x: number; y: number }, _w: number, _h: number) => ({ x: o.x + dx, y: o.y + dy });
       const nid = () => { const i = newId(); made.push(i); return i; };
       return {
         ...pg, fill: undefined, layout: pg.images.some((i) => ids.has(i.id)) ? 'free' : pg.layout,
@@ -412,6 +414,12 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
       return mapSelected(pg, ids, (_k, item: AnyItem) => ({ ...item, locked: !all }) as AnyItem);
     });
   };
+  const scaleMany = (f: number, ox: number, oy: number, nx: number, ny: number) => editPage((pg) => scaleItems(pg, selIds, f, ox, oy, nx, ny));
+  /** Grow or shrink the whole selection around its centre. */
+  const scaleSel = (f: number) => editPage((pg) => {
+    const b = groupBox(pg, selIds); if (!b) return pg;
+    return scaleItems(pg, selIds, f, b.x, b.y, b.x - ((f - 1) * b.w) / 2, b.y - ((f - 1) * b.h) / 2);
+  });
   const setGap = (gx: number, gy: number) => editPage((pg) => gapItems(pg, selIds, gx, gy));
   const selectAll = () => setSel([...page.frames.map((f) => f.id), ...page.images.map((i) => i.id), ...page.texts.map((t) => t.id)]);
   /** Put a loose photo into the nearest frame (an empty one if there is one). */
@@ -482,7 +490,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     placePhoto, updateFrame: (fid, patch) => updateFrame(fid, patch), resizeFrame, rotateFrame, copyToAll,
     detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, setBg,
     rotateImage, setCropSide, resetCrop, fillCell, fitCell, addText, updateText, setLayout, relayout, fillWith, applyTemplate,
-    deleteSel, duplicateSel, toggleLock, align, distribute, order, setGap, selectAll, fitIntoFrame,
+    deleteSel, duplicateSel, toggleLock, scaleSel, align, distribute, order, setGap, selectAll, fitIntoFrame,
     addPage, dupPage, delPage, movePage, goPage, openGrid: () => setGridOpen(true),
   };
 
@@ -507,7 +515,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
 
         <PageCanvas
           page={page} pageNo={pi + 1} pageNumbers={proj.pageNumbers} unit={unit} selectedIds={selIds}
-          onPick={onPick} onBlank={() => { setSel([]); setAdjust(false); }} onMoveMany={moveMany}
+          onPick={onPick} onBlank={() => { setSel([]); setAdjust(false); }} onMoveMany={moveMany} onScaleMany={scaleMany}
           onChange={updateImage} onChangeText={updateText} onChangeFrame={(fid, patch) => updateFrame(fid, patch)} onSwap={swap}
           hand={hand} adjust={adjust} dropTarget={over} border={proj.frameBorder} cropMarks={proj.cropMarks} hitRef={hit}
           onSelBox={setSelBox} onDragging={setDragging}

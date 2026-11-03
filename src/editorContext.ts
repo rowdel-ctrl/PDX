@@ -48,7 +48,7 @@ export interface Ed {
   fillWith: (w: number, h: number) => void;
   applyTemplate: (t: Template) => void;
   // selection actions
-  deleteSel: () => void; duplicateSel: () => void; toggleLock: () => void;
+  deleteSel: () => void; duplicateSel: () => void; scaleSel: (f: number) => void; toggleLock: () => void;
   setGap: (gx: number, gy: number) => void; selectAll: () => void; fitIntoFrame: (imgId: string) => void;
   align: (m: AlignMode) => void; distribute: (axis: 'x' | 'y') => void; order: (to: 'front' | 'back') => void;
   // pages

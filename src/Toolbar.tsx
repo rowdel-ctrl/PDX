@@ -92,6 +92,15 @@ export function PositionSheet({ onClose }: { onClose: () => void }) {
           {A.map(([ic, label, m]) => <button key={m} className="tile" aria-label={label} onClick={() => ed.align(m)}>{ic}<span>{label.replace('Align ', '')}</span></button>)}
         </div>
         {n > 1 && (
+          <div className="field">Size of the whole group
+            <div className="icon-grid two">
+              <button className="tile" onClick={() => ed.scaleSel(1 / 1.1)}><span>Smaller −10%</span></button>
+              <button className="tile" onClick={() => ed.scaleSel(1.1)}><span>Bigger +10%</span></button>
+            </div>
+            <span className="muted small">Or drag a corner handle on the page.</span>
+          </div>
+        )}
+        {n > 1 && (
           <div className="field">Gap between the selected items
             <SliderRow label="Across" value={gx} min={0} max={60} suffix={`${fmt(gx, ed.unit)} ${ed.unit}`} onChange={(v) => { setGx(v); ed.setGap(v, gy); }} />
             <SliderRow label="Down" value={gy} min={0} max={60} suffix={`${fmt(gy, ed.unit)} ${ed.unit}`} onChange={(v) => { setGy(v); ed.setGap(gx, v); }} />

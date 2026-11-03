@@ -151,3 +151,32 @@ export function gapItems(page: Page, ids: string[], gx: number, gy: number): Pag
   }
   return mapSelected(page, new Set(delta.keys()), (_k, item) => { const d = delta.get((item as { id: string }).id)!; return shifted(item, page, d[0], d[1]); });
 }
+
+/**
+ * Scale several items together by `f`. Old group corner (ox, oy) maps to (nx, ny); all in page fractions.
+ * Each item keeps its place inside the group.
+ */
+export function scaleItems(page: Page, ids: string[], f: number, ox: number, oy: number, nx: number, ny: number): Page {
+  const set = new Set(ids);
+  const mv = (x: number, y: number) => ({ x: nx + (x - ox) * f, y: ny + (y - oy) * f });
+  const box = <T extends PageImage | Frame>(o: T): T => {
+    if (o.locked) return o;
+    const c = mv(o.x + o.w / 2, o.y + o.h / 2), w = o.w * f, h = o.h * f;
+    return { ...o, x: c.x - w / 2, y: c.y - h / 2, w, h };
+  };
+  return {
+    ...page, fill: undefined,
+    images: page.images.map((i) => (set.has(i.id) ? box(i) : i)),
+    frames: page.frames.map((q) => (set.has(q.id) ? box(q) : q)),
+    texts: page.texts.map((t) => (set.has(t.id) && !t.locked ? { ...t, ...mv(t.x, t.y), sizePt: Math.max(4, t.sizePt * f) } : t)),
+  };
+}
+
+/** Bounding box of the given items, in page fractions. */
+export function groupBox(page: Page, ids: string[]): Box | null {
+  const bs = ids.map((id) => findItem(page, id)).filter((r): r is { kind: Kind; item: AnyItem } => !!r).map((r) => itemBox(page, r.kind, r.item));
+  if (!bs.length) return null;
+  const x0 = Math.min(...bs.map((b) => b.x)), y0 = Math.min(...bs.map((b) => b.y));
+  const x1 = Math.max(...bs.map((b) => b.x + b.w)), y1 = Math.max(...bs.map((b) => b.y + b.h));
+  return { x: x0 / page.widthMm, y: y0 / page.heightMm, w: (x1 - x0) / page.widthMm, h: (y1 - y0) / page.heightMm };
+}
