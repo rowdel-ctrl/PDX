@@ -261,10 +261,9 @@ export function AddPanel() {
     <div className="panel-body">
       <Library />
       <div className="field">Also add
-        <div className="row3">
+        <div className="row2">
           <button className="btn tonal" onClick={() => ed.setAddTab('frames')}><FrameIcon /> Sizes</button>
           <button className="btn tonal" onClick={() => ed.setAddTab('templates')}><Template /> Templates</button>
-          <button className="btn tonal" onClick={ed.addText}><Type /> Text</button>
         </div>
       </div>
     </div>
@@ -375,58 +374,62 @@ export function PagePanel() {
   const pick = (name: string) => { const [a, b] = PRESETS[name]; setCustom(false); apply(landscape ? b : a, landscape ? a : b); };
   return (
     <div className="panel-body">
-      <div className="field" style={{ marginTop: 0 }}>Paper
-        <div className="chips">
-          {Object.keys(PRESETS).map((n) => <Chip key={n} on={!custom && preset === n} onClick={() => pick(n)}>{n}</Chip>)}
-          <button className={'chip custom' + (custom || !preset ? ' on' : '')} aria-pressed={custom || !preset} onClick={() => setCustom(!custom)}><Edit /> Custom</button>
-        </div>
-      </div>
-      {(custom || !preset) && (
-        <div className="field">Custom size
-          <div className="row">
-            <NumField label="Width" mm={wMm} unit={unit} onCommit={(mm) => setW(clampMm(mm))} />
-            <button className="btn" onClick={() => { setW(hMm); setH(wMm); }} aria-label="Swap width and height">⇄</button>
-            <NumField label="Height" mm={hMm} unit={unit} onCommit={(mm) => setH(clampMm(mm))} />
-            <Segmented<Unit> value={unit} onChange={(u) => ed.edit((p) => ({ ...p, unit: u }))} options={[['mm', 'mm'], ['cm', 'cm'], ['in', 'in']]} />
+      <div className="psec"><b>Size</b>
+        <div className="field" style={{ marginTop: 0 }}>Paper
+          <div className="chips">
+            {Object.keys(PRESETS).map((n) => <Chip key={n} on={!custom && preset === n} onClick={() => pick(n)}>{n}</Chip>)}
+            <button className={'chip custom' + (custom || !preset ? ' on' : '')} aria-pressed={custom || !preset} onClick={() => setCustom(!custom)}><Edit /> Custom</button>
           </div>
         </div>
-      )}
-      {multi && (
-        <div className="tp-line"><span>Apply to</span>
-          <Segmented value={scope} onChange={setScope} options={[['this', 'This page'], ['all', `All ${proj.pages.length} pages`]]} />
-        </div>
-      )}
-      <div className="tp-line"><span>Direction</span>
-        <Segmented value={landscape ? 'l' : 'p'} onChange={(v) => { if ((v === 'l') !== landscape) apply(page.heightMm, page.widthMm); }} options={[['p', 'Portrait'], ['l', 'Landscape']]} />
-      </div>
-      {(custom || !preset) && <button className="btn primary wide" style={{ marginTop: 0 }} onClick={() => apply(wMm, hMm)}>Apply size</button>}
-      <Swatches label="Page color" value={page.background} onChange={(c) => ed.editPage((pg) => ({ ...pg, background: c }))} />
-      <Switch label="Page numbers" checked={proj.pageNumbers} onChange={(b) => ed.edit((p) => ({ ...p, pageNumbers: b }))} />
-      <Switch label="Cutting lines around photos" hint="Thin line to cut along" checked={fb.on} onChange={(b) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, on: b } }))} />
-      {fb.on && (
-        <>
-          <ThickRow label="Line thickness" value={fb.widthMm} min={0.1} max={5} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, widthMm: v } }))} />
-          <Swatches label="Cutting line color" value={fb.color} onChange={(c) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, color: c } }))} />
-        </>
-      )}
-      <Switch label="Border around the page" checked={page.border.on} onChange={(b) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, on: b } }))} />
-      {page.border.on && (
-        <>
-          <ThickRow label="Border thickness" value={page.border.widthMm} min={0.5} max={10} onChange={(v) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, widthMm: v } }))} />
-          <Swatches label="Border color" value={page.border.color} onChange={(c) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, color: c } }))} />
-        </>
-      )}
-      <button className="btn tonal" style={{ alignSelf: 'flex-start' }} onClick={ed.openPrinter}>Printer check</button>
-      <More>
-        {fb.on && (
-          <div className="field">Cutting line sits
-            <Segmented value={fb.place} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, place: v } }))} options={[['outside', 'Outside the photo'], ['inside', 'Inside']]} />
-            <span className="muted small">{fb.place === 'outside' ? 'Keeps the photo full size. Cut just inside the line.' : 'Draws over the photo edge. Cut along the outer edge.'}</span>
+        {(custom || !preset) && (
+          <div className="field">Custom size
+            <div className="row">
+              <NumField label="Width" mm={wMm} unit={unit} onCommit={(mm) => setW(clampMm(mm))} />
+              <button className="btn" onClick={() => { setW(hMm); setH(wMm); }} aria-label="Swap width and height">⇄</button>
+              <NumField label="Height" mm={hMm} unit={unit} onCommit={(mm) => setH(clampMm(mm))} />
+              <Segmented<Unit> value={unit} onChange={(u) => ed.edit((p) => ({ ...p, unit: u }))} options={[['mm', 'mm'], ['cm', 'cm'], ['in', 'in']]} />
+            </div>
           </div>
         )}
+        {multi && (
+          <div className="tp-line"><span>Apply to</span>
+            <Segmented value={scope} onChange={setScope} options={[['this', 'This page'], ['all', `All ${proj.pages.length} pages`]]} />
+          </div>
+        )}
+        <div className="tp-line"><span>Direction</span>
+          <Segmented value={landscape ? 'l' : 'p'} onChange={(v) => { if ((v === 'l') !== landscape) apply(page.heightMm, page.widthMm); }} options={[['p', 'Portrait'], ['l', 'Landscape']]} />
+        </div>
+        {(custom || !preset) && <button className="btn primary wide" style={{ marginTop: 0 }} onClick={() => apply(wMm, hMm)}>Apply size</button>}
+        <Swatches label="Page color" value={page.background} onChange={(c) => ed.editPage((pg) => ({ ...pg, background: c }))} />
+        <Switch label="Page numbers" checked={proj.pageNumbers} onChange={(b) => ed.edit((p) => ({ ...p, pageNumbers: b }))} />
+        <button className="btn tonal" style={{ alignSelf: 'flex-start' }} onClick={ed.openGrid}>Show all pages</button>
+      </div>
+
+      <div className="psec"><b>Print lines</b>
+        <Switch label="Cutting lines around photos" hint="Thin line to cut along" checked={fb.on} onChange={(b) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, on: b } }))} />
+        {fb.on && (
+          <>
+            <ThickRow label="Line thickness" value={fb.widthMm} min={0.1} max={5} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, widthMm: v } }))} />
+            <Swatches label="Cutting line color" value={fb.color} onChange={(c) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, color: c } }))} />
+            <div className="field">Cutting line sits
+              <Segmented value={fb.place} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, place: v } }))} options={[['outside', 'Outside the photo'], ['inside', 'Inside']]} />
+              <span className="muted small">{fb.place === 'outside' ? 'Keeps the photo full size. Cut just inside the line.' : 'Draws over the photo edge. Cut along the outer edge.'}</span>
+            </div>
+          </>
+        )}
         <Switch label="Corner marks" hint={proj.cropMarks && page.spacingMm < 4 ? 'Needs about 4 mm gap between photos' : 'Small marks at each photo corner'} checked={proj.cropMarks} onChange={(b) => ed.edit((p) => ({ ...p, cropMarks: b }))} />
-        <button className="btn tonal" onClick={ed.openGrid}>Show all pages</button>
-      </More>
+        <button className="btn tonal" style={{ alignSelf: 'flex-start' }} onClick={ed.openPrinter}>Printer check</button>
+      </div>
+
+      <div className="psec"><b>Border</b>
+        <Switch label="Border around the page" checked={page.border.on} onChange={(b) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, on: b } }))} />
+        {page.border.on && (
+          <>
+            <ThickRow label="Border thickness" value={page.border.widthMm} min={0.5} max={10} onChange={(v) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, widthMm: v } }))} />
+            <Swatches label="Border color" value={page.border.color} onChange={(c) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, color: c } }))} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

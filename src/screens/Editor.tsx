@@ -15,7 +15,7 @@ import PageGrid from '../PageGrid';
 import ExportSheet from './Export';
 import { FloatingToolbar } from '../Toolbar';
 import SettingsSheet from '../SettingsSheet';
-import { ArrangePanel, ColorPanel, CopiesPanel, CutoutPanel, EnhancePanel, SelectPanel, SizePanel } from '../toolpanels';
+import { ArrangePanel, CopiesPanel, PhotoPanel, SelectPanel } from '../toolpanels';
 import { AddPanel, ItemPanel, LayoutPanel, PagePanel, TextPanel } from '../panels';
 import { EdCtx, type AddTab, type Ed, type PanelId } from '../editorContext';
 import { TEMPLATES, type Template } from '../templates';
@@ -27,7 +27,7 @@ export type Tab = PanelId;
 const NAV: [PanelId, string, () => React.ReactElement][] = [
   ['add', 'Add', Plus], ['layout', 'Grid', Grid], ['text', 'Text', Type], ['page', 'Page', Tune], ['select', 'Select', Checklist],
 ];
-const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Grid', text: 'Text', page: 'Page', item: 'Crop', cutout: 'Cut out', color: 'Background color', arrange: 'Arrange', copies: 'Copies', select: 'Select', size: 'Group size', enhance: 'Enhance' };
+const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Grid', text: 'Text', page: 'Page', item: 'Crop', cutout: 'Cut out', color: 'Background color', arrange: 'Arrange', copies: 'Copies', select: 'Select', size: 'Group size', enhance: 'Enhance', photo: 'Photo' };
 
 const filesOf = (p: Project) => new Set([
   ...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]),
@@ -669,16 +669,16 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   useEffect(() => { setMulti(panel === 'select'); }, [panel]);
   // item panels close when nothing is selected any more
   useEffect(() => {
-    if (!selIds.length && panel && ['item', 'cutout', 'enhance', 'color', 'arrange', 'copies', 'size'].includes(panel)) setPanel(null);
+    if (!selIds.length && panel && ['item', 'photo', 'arrange', 'copies'].includes(panel)) setPanel(null);
   }, [selIds.length, panel]);
   type CtxTool = { id: string; label: string; icon: () => React.ReactElement; on: () => void; active?: boolean };
   const T = (id: PanelId, label: string, icon: () => React.ReactElement): CtxTool => ({ id, label, icon, active: panel === id, on: () => toggleNav(id) });
   const ctxTools: CtxTool[] | null = (() => {
     if (!selIds.length || adjust) return null;
-    const more = [T('arrange', 'Arrange', Layers), T('copies', 'Copies', Copy), T('select', 'Select', Checklist)];
-    if (selIds.length > 1) return [T('arrange', 'Arrange', Layers), T('size', 'Group size', Size), T('copies', 'Copies', Copy), T('select', 'Select', Checklist)];
-    if (selImage) return [T('item', 'Crop', CropIcon), T('cutout', 'Cut out', Wand), T('enhance', 'Enhance', Sparkle), T('color', 'Color', Palette), ...more];
-    if (selFrame?.file) return [{ id: 'crop', label: 'Crop', icon: CropIcon, on: () => { setPanel(null); setAdjust(true); } }, T('cutout', 'Cut out', Wand), T('enhance', 'Enhance', Sparkle), T('color', 'Color', Palette), ...more];
+    const more = [T('arrange', 'Arrange', Layers), T('copies', 'Copies', Copy)];
+    if (selIds.length > 1) return more;
+    if (selImage) return [T('item', 'Crop', CropIcon), T('photo', 'Photo', Sparkle), ...more];
+    if (selFrame?.file) return [{ id: 'crop', label: 'Crop', icon: CropIcon, on: () => { setPanel(null); setAdjust(true); } }, T('photo', 'Photo', Sparkle), ...more];
     if (selFrame) return [{ id: 'add', label: 'Add photo', icon: ImageIcon, active: panel === 'add', on: () => { setAddTab('photos'); toggleNav('add'); } }, T('item', 'Frame', Tune), ...more];
     if (selText) return [T('text', 'Edit text', Edit), ...more];
     return null;
@@ -747,13 +747,10 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
             {shownPanel === 'text' && <TextPanel />}
             {shownPanel === 'page' && <PagePanel />}
             {shownPanel === 'item' && <ItemPanel />}
-            {shownPanel === 'cutout' && <CutoutPanel />}
-            {shownPanel === 'enhance' && <EnhancePanel />}
-            {shownPanel === 'color' && <ColorPanel />}
+            {shownPanel === 'photo' && <PhotoPanel />}
             {shownPanel === 'arrange' && <ArrangePanel />}
             {shownPanel === 'copies' && <CopiesPanel />}
             {shownPanel === 'select' && <SelectPanel />}
-            {shownPanel === 'size' && <SizePanel />}
           </div>
         </section>
 

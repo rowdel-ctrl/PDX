@@ -94,6 +94,13 @@ export function ArrangePanel() {
       )}
       {n > 1 && (
         <>
+          <div className="field">Size of the whole group
+            <div className="row2">
+              <button className="btn tonal" onClick={() => ed.scaleSel(1 / 1.1)}>Smaller −10%</button>
+              <button className="btn tonal" onClick={() => ed.scaleSel(1.1)}>Bigger +10%</button>
+            </div>
+            <span className="muted small">Or drag a corner handle on the page.</span>
+          </div>
           <div className="field">Gap between the selected items
             <SliderRow label="Across" value={gx} min={0} max={60} suffix={`${fmt(gx, ed.unit)} ${ed.unit}`} onChange={(v) => { setGx(v); ed.setGap(v, gy); }} />
             <SliderRow label="Down" value={gy} min={0} max={60} suffix={`${fmt(gy, ed.unit)} ${ed.unit}`} onChange={(v) => { setGy(v); ed.setGap(gx, v); }} />
@@ -130,7 +137,6 @@ export function CopiesPanel() {
   if (!ed.sel.length) return <div className="panel-body"><p className="muted small" style={{ margin: 0 }}>Select something to copy it.</p></div>;
   return (
     <div className="panel-body">
-      <button className="btn tonal wide" onClick={ed.duplicateSel}><Copy /> Duplicate {ed.sel.length > 1 ? `${ed.sel.length} items` : 'once'}</button>
       <FillForm />
     </div>
   );
@@ -160,19 +166,6 @@ export function SelectPanel() {
   );
 }
 
-/** Make a selected group bigger or smaller. */
-export function SizePanel() {
-  const ed = useEd();
-  return (
-    <div className="panel-body">
-      <p className="muted small" style={{ margin: 0 }}>Resize everything selected together. You can also drag a corner handle on the page.</p>
-      <div className="row2">
-        <button className="btn tonal" onClick={() => ed.scaleSel(1 / 1.1)}>Smaller −10%</button>
-        <button className="btn tonal" onClick={() => ed.scaleSel(1.1)}>Bigger +10%</button>
-      </div>
-    </div>
-  );
-}
 
 /** Make a photo look better: light, colour, sharpness, noise. Upscale 2× for photos that are too small to print sharp. */
 export function EnhancePanel() {
@@ -230,6 +223,25 @@ export function EnhancePanel() {
         <div className="banner busy"><span className="toast-ic" aria-hidden="true"><span className="spin" /></span><span className="toast-tx">{busy}</span>
           {abort.current && <button className="btn" onClick={() => abort.current?.abort()}>Cancel</button>}</div>
       )}
+    </div>
+  );
+}
+
+/** One tool for how a photo looks: cut out, enhance, background colour. */
+export function PhotoPanel() {
+  const [sec, setSec] = useState<'cut' | 'enhance' | 'color'>('cut');
+  return (
+    <div className="panel-body">
+      <div className="seg photo-seg" role="tablist" aria-label="Photo tools">
+        <button role="tab" aria-selected={sec === 'cut'} className={sec === 'cut' ? 'on' : ''} onClick={() => setSec('cut')}>Cut out</button>
+        <button role="tab" aria-selected={sec === 'enhance'} className={sec === 'enhance' ? 'on' : ''} onClick={() => setSec('enhance')}>Enhance</button>
+        <button role="tab" aria-selected={sec === 'color'} className={sec === 'color' ? 'on' : ''} onClick={() => setSec('color')}>Color</button>
+      </div>
+      <div className="photo-sections">
+        {sec === 'cut' && <CutoutPanel />}
+        {sec === 'enhance' && <EnhancePanel />}
+        {sec === 'color' && <ColorPanel />}
+      </div>
     </div>
   );
 }

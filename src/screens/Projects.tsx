@@ -93,16 +93,6 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
           ))}
         </div>
 
-        <h2 className="sec">Templates</h2>
-        <div className="hscroll">
-          {thumbs.map(({ t, page }, i) => (
-            <button key={t.id} className="tcard" onClick={() => fromTemplate(i)}>
-              <span className="tcard-thumb"><PageThumb page={page} maxW={78} maxH={92} /></span>
-              <span className="tcard-name">{t.name}</span>
-            </button>
-          ))}
-        </div>
-
         <div className="sec-row">
           <h2 className="sec">{picking ? `${chosen.length} selected` : 'Recent'}</h2>
           {picking ? (

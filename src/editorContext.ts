@@ -3,7 +3,7 @@ import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayIte
 import type { AlignMode, SelectMode } from './arrange';
 import type { Template } from './templates';
 
-export type PanelId = 'add' | 'layout' | 'text' | 'page' | 'item' | 'cutout' | 'color' | 'arrange' | 'copies' | 'select' | 'size' | 'enhance';
+export type PanelId = 'add' | 'layout' | 'text' | 'page' | 'item' | 'cutout' | 'color' | 'arrange' | 'copies' | 'select' | 'size' | 'enhance' | 'photo';
 export type AddTab = 'photos' | 'frames' | 'templates';
 
 export interface Ed {

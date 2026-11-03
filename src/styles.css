@@ -403,3 +403,9 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .card .pcheck{z-index:3}
 .pickbar{position:sticky;bottom:0}
 .pickbar .btn{flex:1}
+
+.psec{display:flex;flex-direction:column;gap:12px;padding-top:6px}
+.psec+.psec{border-top:1px solid var(--line);padding-top:16px;margin-top:4px}
+.psec>b{font-family:var(--head);font-weight:500;font-size:14px;color:var(--accent-text)}
+.photo-seg{margin-bottom:2px}
+.photo-sections .panel-body{padding:10px 0 0}
