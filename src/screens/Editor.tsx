@@ -101,21 +101,33 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
       for (const f of Array.from(files)) {
         try { const r = await importImage(f); imported.push(r); seen.current.add(r.file); } catch { /* skip unreadable */ }
       }
-      let added = 0;
-      editPage((pg) => {
-        const imgs = [...pg.images];
-        const cap = cellCount(pg.layout);
-        for (const im of imported) {
-          if (imgs.length >= cap) break;
-          const base = { id: newId(), file: im.file, aspect: im.aspect, rot: 0, crop: FULL };
-          imgs.push({ ...base, ...(pg.layout === 'free' ? freeBox(pg, im.aspect, imgs.length) : { x: 0, y: 0, w: 0.5, h: 0.5 }) });
-          added++;
+      let added = 0, extra = 0;
+      // Fill this page, then continue onto new pages (same size and style) so nothing is dropped.
+      edit((p) => {
+        const pages = [...p.pages];
+        const queue = [...imported];
+        let k = idx;
+        while (queue.length) {
+          const pg = pages[k];
+          const cap = cellCount(pg.layout);
+          const imgs = [...pg.images];
+          while (queue.length && imgs.length < cap) {
+            const im = queue.shift()!;
+            const base = { id: newId(), file: im.file, aspect: im.aspect, rot: 0, crop: FULL };
+            imgs.push({ ...base, ...(pg.layout === 'free' ? freeBox(pg, im.aspect, imgs.length) : { x: 0, y: 0, w: 0.5, h: 0.5 }) });
+            added++;
+          }
+          const { fill: _drop, ...rest } = pg; void _drop;
+          pages[k] = applyLayout({ ...rest, images: imgs });
+          if (queue.length) {
+            pages.splice(k + 1, 0, { ...pg, id: newId(), images: [], texts: [], fill: undefined });
+            extra++; k++;
+          }
         }
-        const { fill: _drop, ...rest } = pg; void _drop;
-        return applyLayout({ ...rest, images: imgs });
-      }, idx);
-      if (added < imported.length) say(`Page is full (${cellCount(page.layout)} max). Use a bigger layout or add a page.`);
-      else say(added ? `Added ${added}` : 'Could not read that image');
+        return { ...p, pages };
+      });
+      if (!added) say('Could not read that image');
+      else say(`Added ${added}${extra ? ` (${extra} new ${extra === 1 ? 'page' : 'pages'})` : ''}`);
     } catch { say('Could not add images'); }
     if (fileRef.current) fileRef.current.value = '';
   };
