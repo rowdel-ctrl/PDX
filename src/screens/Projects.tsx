@@ -3,6 +3,7 @@ import { listProjects, removeProject, saveProject, startProject, type StartKind 
 import { deleteImages } from '../images';
 import { fmt, presetOf } from '../units';
 import PageThumb from '../PageThumb';
+import SizeSheet from '../SizeSheet';
 import { newPage } from '../storage';
 import { projectFromTemplate, TEMPLATES } from '../templates';
 import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Grid, Pages as PagesIcon, Plus, Size, More } from '../icons';
@@ -11,6 +12,7 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
   const [list, setList] = useState(listProjects);
   const [dark, setDark] = useState(document.documentElement.dataset.theme === 'dark');
   const [menu, setMenu] = useState<string | null>(null);
+  const [askSize, setAskSize] = useState<StartKind | null>(null);
   const refresh = () => setList(listProjects());
   const thumbs = useMemo(() => TEMPLATES.map((t) => ({ t, page: t.make(newPage(t.w, t.h)) })), []);
 
@@ -20,11 +22,13 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
     document.documentElement.dataset.theme = next ? 'dark' : 'light';
     try { localStorage.setItem('pdx.theme', next ? 'dark' : 'light'); } catch { /* ignore */ }
   };
-  const create = (kind: StartKind) => {
-    const { project, tab } = startProject(kind);
+  const create = (kind: StartKind, size?: { w: number; h: number }) => {
+    const { project, tab } = startProject(kind, size);
     saveProject(project);
     onOpen(project.id, tab);
   };
+  // Documents, collages and blank pages ask for a size first. ID photos and photo prints have fixed sizes.
+  const start = (kind: StartKind) => (kind === 'document' || kind === 'blank' || kind === 'collage' ? setAskSize(kind) : create(kind));
   const fromTemplate = (i: number) => {
     const p = projectFromTemplate(TEMPLATES[i]);
     saveProject(p);
@@ -58,7 +62,7 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
         <h1>What will you make?</h1>
         <div className="starts">
           {starts.map(([k, label, Ic, cls]) => (
-            <button key={k} className={'start ' + cls} onClick={() => (k === 'poster' ? onPoster() : create(k))}><Ic />{label}</button>
+            <button key={k} className={'start ' + cls} onClick={() => (k === 'poster' ? onPoster() : start(k))}><Ic />{label}</button>
           ))}
         </div>
 
@@ -99,6 +103,7 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
           })}
         </div>
       </main>
+      {askSize && <SizeSheet title={askSize === 'collage' ? 'New collage' : askSize === 'blank' ? 'New page' : 'New document'} onClose={() => setAskSize(null)} onCreate={(size) => { const k = askSize; setAskSize(null); create(k, size); }} />}
     </div>
   );
 }

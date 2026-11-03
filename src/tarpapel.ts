@@ -1,4 +1,4 @@
-import { clip, endPath, PDFDocument, popGraphicsState, pushGraphicsState, rectangle, rgb, StandardFonts } from 'pdf-lib';
+import { clip, degrees, endPath, PDFDocument, PDFFont, PDFPage, popGraphicsState, pushGraphicsState, rectangle, rgb, StandardFonts } from 'pdf-lib';
 import { mmToPt } from './units';
 
 export type Orient = 'auto' | 'portrait' | 'landscape';
@@ -12,6 +12,9 @@ export interface TpSettings {
   widthMm: number;                // size mode: final poster width
   cols: number; rows: number;     // sheets mode
   fill: boolean;                  // sheets mode: crop to fill instead of fitting
+  cutLines: boolean;              // dashed cut lines with scissors, and neighbour tags
+  glueShade: boolean;             // shade the glue strip (overlap mode)
+  guidePage: boolean;             // add an assembly guide as the first page
 }
 
 export interface TpPlan {
@@ -19,6 +22,7 @@ export interface TpPlan {
   cw: number; ch: number;         // printable content per sheet, mm
   stepX: number; stepY: number;   // distance between sheet origins, mm
   cols: number; rows: number; count: number;
+  overlap: number;                // mm actually used
   areaW: number; areaH: number;   // everything the sheets cover, mm
   img: { x: number; y: number; w: number; h: number }; // placement in area coords, mm
 }
@@ -45,7 +49,7 @@ function planFor(aspect: number, s: TpSettings, landscape: boolean): TpPlan {
     img = { x: (aw - fw) / 2, y: (ah - fh) / 2, w: fw, h: fh };
   }
   return {
-    sheetW, sheetH, cw, ch, stepX, stepY, cols, rows, count: cols * rows,
+    sheetW, sheetH, cw, ch, stepX, stepY, cols, rows, count: cols * rows, overlap: o,
     areaW: (cols - 1) * stepX + cw, areaH: (rows - 1) * stepY + ch, img,
   };
 }
@@ -61,42 +65,172 @@ export function plan(aspect: number, s: TpSettings): TpPlan {
 }
 
 export const dpi = (pixelsW: number, p: TpPlan) => pixelsW / (p.img.w / 25.4);
+/** Number of PDF pages for these settings. */
+export const pageCount = (p: TpPlan, s: TpSettings) => p.count + (s.guidePage ? 1 : 0);
+
+const RED = rgb(0.9, 0.28, 0.31), VIOLET = rgb(0.486, 0.361, 1), GRAY = rgb(0.35, 0.35, 0.35), WHITE = rgb(1, 1, 1), INK = rgb(0.1, 0.1, 0.14);
+
+/** Lucide-style scissors, centred on (xmm, ymm), blades pointing along `angle` (degrees, clockwise, 0 = right). */
+function scissors(page: PDFPage, SH: number, xmm: number, ymm: number, angle: number) {
+  const k = 0.3, a = (angle * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a);
+  const T = (px: number, py: number) => {
+    const dx = (px - 12) * k, dy = (py - 12) * k;
+    return { x: mmToPt(xmm + dx * cs - dy * sn), y: SH - mmToPt(ymm + dx * sn + dy * cs) };
+  };
+  const segs: [number, number, number, number][] = [[8.12, 8.12, 12, 12], [20, 4, 8.12, 15.88], [14.8, 14.8, 20, 20]];
+  for (const [color, thickness] of [[WHITE, 3.4], [RED, 1.3]] as const) {
+    for (const [x1, y1, x2, y2] of segs) page.drawLine({ start: T(x1, y1), end: T(x2, y2), thickness, color, lineCap: 1 });
+    for (const [cx, cy] of [[6, 6], [6, 18]]) { const c = T(cx, cy); page.drawCircle({ x: c.x, y: c.y, size: mmToPt(3 * k), borderColor: color, borderWidth: thickness }); }
+  }
+}
+
+function wrap(text: string, font: PDFFont, size: number, maxW: number): string[] {
+  const out: string[] = []; let line = '';
+  for (const w of text.split(' ')) {
+    const t = line ? `${line} ${w}` : w;
+    if (font.widthOfTextAtSize(t, size) > maxW && line) { out.push(line); line = w; } else line = t;
+  }
+  if (line) out.push(line);
+  return out;
+}
 
 export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s: TpSettings, name: string): Promise<Uint8Array> {
   const p = plan(aspect, s);
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const image = await doc.embedJpg(jpeg);
   const SW = mmToPt(p.sheetW), SH = mmToPt(p.sheetH);
-  const m = s.margin;
+  const m = s.margin, o = p.overlap, overlap = s.join === 'overlap';
   const tick = Math.min(4, m - 0.8);
-  const gray = rgb(0.35, 0.35, 0.35);
+  const X = mmToPt, Y = (y: number) => SH - mmToPt(y);
+
+  if (s.guidePage) {
+    const pg = doc.addPage([SW, SH]);
+    const pad = 14, base = p.sheetW >= 200 ? 10 : 8;
+    const text = (t: string, x: number, y: number, size: number, f = font, color = INK) => pg.drawText(t, { x: X(x), y: Y(y) - size, size, font: f, color });
+    text('Assembly guide', pad, pad, base * 2, bold);
+    text(`${name}  ·  Poster ${Math.round(p.img.w) / 10} × ${Math.round(p.img.h) / 10} cm  ·  ${p.count} sheets (${p.cols} × ${p.rows})  ·  ${overlap ? 'overlap and glue' : 'trim and tape'}`, pad, pad + base * 1.5, base * 0.9, font, GRAY);
+    // steps (measured first so the map can use the space that is left)
+    const steps = overlap ? [
+      'Print every page at 100% ("Actual size"). Do not choose "Fit to page".',
+      `Cut along the red dashed lines (the scissors show where each line starts). On every sheet cut the left and top edges. Also cut the bottom edge in the last row and the right edge in the last column.`,
+      'Start with sheet 1. Put glue on the shaded strip on its right edge, lay sheet 2 on top and line up the picture. Repeat along the row.',
+      'Build the next row the same way. Put glue on the shaded strip along the bottom of the row above and lay the new row on top.',
+    ] : [
+      'Print every page at 100% ("Actual size"). Do not choose "Fit to page".',
+      'Cut along the red dashed lines on all four sides of every sheet.',
+      'Lay the sheets out in order, edge to edge, and line up the picture.',
+      'Tape the seams on the back. Join each row first, then tape the rows together.',
+    ];
+    const textW = p.sheetW - 2 * pad - 8;
+    const stepLines = steps.map((t) => wrap(t, font, base, X(textW)));
+    const stepsH = stepLines.reduce((h, l) => h + Math.max(6, l.length * base * 0.5) + base * 0.5, 0);
+    // map of the sheets
+    const mapW = p.sheetW - 2 * pad;
+    const mapH = Math.max(30, Math.min(p.sheetH * 0.45, p.sheetH - 2 * pad - base * 3.2 - stepsH - base * 3.6 - 8)), k = Math.min(mapW / p.areaW, mapH / p.areaH);
+    const mx = pad + (mapW - p.areaW * k) / 2, my = pad + base * 3.2;
+    pg.drawRectangle({ x: X(mx), y: Y(my + p.areaH * k), width: X(p.areaW * k), height: X(p.areaH * k), color: rgb(0.93, 0.93, 0.95) });
+    pg.pushOperators(pushGraphicsState(), rectangle(X(mx), Y(my + p.areaH * k), X(p.areaW * k), X(p.areaH * k)), clip(), endPath());
+    pg.drawImage(image, { x: X(mx + p.img.x * k), y: Y(my + (p.img.y + p.img.h) * k), width: X(p.img.w * k), height: X(p.img.h * k) });
+    pg.pushOperators(popGraphicsState());
+    if (overlap && o > 0) {
+      for (let c = 1; c < p.cols; c++) pg.drawRectangle({ x: X(mx + c * p.stepX * k), y: Y(my + p.areaH * k), width: X(o * k), height: X(p.areaH * k), color: VIOLET, opacity: 0.3 });
+      for (let r = 1; r < p.rows; r++) pg.drawRectangle({ x: X(mx), y: Y(my + r * p.stepY * k + o * k), width: X(p.areaW * k), height: X(o * k), color: VIOLET, opacity: 0.3 });
+    }
+    const fs = Math.max(10, Math.min(34, Math.min(p.cw, p.ch) * k * 1.3));
+    for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) {
+      const tx = mx + c * p.stepX * k, ty = my + r * p.stepY * k, tw = p.cw * k, th = p.ch * k;
+      pg.drawRectangle({ x: X(tx), y: Y(ty + th), width: X(tw), height: X(th), borderColor: VIOLET, borderWidth: 0.9, borderDashArray: [4, 3] });
+      const n = String(r * p.cols + c + 1), w = bold.widthOfTextAtSize(n, fs);
+      const nx = X(tx + tw / 2) - w / 2, ny = Y(ty + th / 2) - fs * 0.35;
+      for (const [dx, dy] of [[-1.2, 0], [1.2, 0], [0, -1.2], [0, 1.2]]) pg.drawText(n, { x: nx + dx, y: ny + dy, size: fs, font: bold, color: INK });
+      pg.drawText(n, { x: nx, y: ny, size: fs, font: bold, color: WHITE });
+    }
+    // "start here" on sheet 1
+    const sw = bold.widthOfTextAtSize('START HERE', 7) + 10;
+    pg.drawRectangle({ x: X(mx + 2), y: Y(my + 2) - 12, width: sw, height: 12, color: VIOLET });
+    pg.drawText('START HERE', { x: X(mx + 2) + 5, y: Y(my + 2) - 9, size: 7, font: bold, color: WHITE });
+    text('Sheets are numbered left to right, top to bottom.', mx, my + p.areaH * k + 2, base * 0.8, font, GRAY);
+    let y = my + p.areaH * k + base * 2.4;
+    steps.forEach((t, i) => {
+      pg.drawCircle({ x: X(pad + 2.5), y: Y(y + 2.2), size: X(2.6), color: VIOLET });
+      pg.drawText(String(i + 1), { x: X(pad + 2.5) - 2.2, y: Y(y + 2.2) - 3, size: 8, font: bold, color: WHITE });
+      const lines = stepLines[i];
+      lines.forEach((ln, j) => pg.drawText(ln, { x: X(pad + 8), y: Y(y + j * base * 0.5 + 1) - base, size: base, font, color: INK }));
+      y += Math.max(6, lines.length * base * 0.5) + base * 0.5;
+    });
+    // legend
+    const ly = p.sheetH - pad - 4;
+    pg.drawLine({ start: { x: X(pad), y: Y(ly) }, end: { x: X(pad + 14), y: Y(ly) }, thickness: 1.2, color: RED, dashArray: [4, 2.5] });
+    text('Cut line', pad + 16, ly - 1.6, base * 0.8, font, GRAY);
+    if (overlap) { pg.drawRectangle({ x: X(pad + 38), y: Y(ly + 1.5), width: X(10), height: X(3), color: VIOLET, opacity: 0.5 }); text('Glue strip', pad + 50, ly - 1.6, base * 0.8, font, GRAY); }
+    text('Made with PDX', p.sheetW - pad - 22, ly - 1.6, base * 0.8, font, GRAY);
+  }
+
   for (let r = 0; r < p.rows; r++) {
     for (let c = 0; c < p.cols; c++) {
       const page = doc.addPage([SW, SH]);
       const ox = c * p.stepX, oy = r * p.stepY; // origin of this sheet's content in area coords
-      // content rectangle (pdf coords are bottom-up)
-      const cx = mmToPt(m), cy = SH - mmToPt(m + p.ch), cwP = mmToPt(p.cw), chP = mmToPt(p.ch);
+      const cx = X(m), cy = Y(m + p.ch), cwP = X(p.cw), chP = X(p.ch);
       page.pushOperators(pushGraphicsState(), rectangle(cx, cy, cwP, chP), clip(), endPath());
-      page.drawImage(image, {
-        x: mmToPt(m + p.img.x - ox), y: SH - mmToPt(m + p.img.y - oy + p.img.h),
-        width: mmToPt(p.img.w), height: mmToPt(p.img.h),
-      });
+      page.drawImage(image, { x: X(m + p.img.x - ox), y: Y(m + p.img.y - oy + p.img.h), width: X(p.img.w), height: X(p.img.h) });
       page.pushOperators(popGraphicsState());
-      // crop marks in the unprintable border, at each corner of the content area
-      if (tick > 0.5) {
-        const xs = [m, m + p.cw], ys = [m, m + p.ch];
-        for (const x of xs) for (const y of ys) {
-          const px = mmToPt(x), py = SH - mmToPt(y);
-          const dx = x === m ? -1 : 1, dy = y === m ? 1 : -1; // outward
-          page.drawLine({ start: { x: px + dx * mmToPt(0.8), y: py }, end: { x: px + dx * mmToPt(0.8 + tick), y: py }, thickness: 0.4, color: gray });
-          page.drawLine({ start: { x: px, y: py + dy * mmToPt(0.8) }, end: { x: px, y: py + dy * mmToPt(0.8 + tick) }, thickness: 0.4, color: gray });
+
+      // glue strips: the next sheet to the right / below goes on top of these
+      if (overlap && s.glueShade && o > 0) {
+        const strips: [number, number, number, number, boolean][] = [];
+        if (c < p.cols - 1) strips.push([m + p.cw - o, m, o, p.ch, true]);
+        if (r < p.rows - 1) strips.push([m, m + p.ch - o, p.cw, o, false]);
+        for (const [sx, sy, sw, sh, vertical] of strips) {
+          page.drawRectangle({ x: X(sx), y: Y(sy + sh), width: X(sw), height: X(sh), color: VIOLET, opacity: 0.42 });
+          page.pushOperators(pushGraphicsState(), rectangle(X(sx), Y(sy + sh), X(sw), X(sh)), clip(), endPath());
+          for (let t = -sh; t < sw; t += 3) page.drawLine({ start: { x: X(sx + t), y: Y(sy + sh) }, end: { x: X(sx + t + sh), y: Y(sy) }, thickness: 0.7, color: WHITE, opacity: 0.6 });
+          page.pushOperators(popGraphicsState());
+          if ((vertical ? sw : sh) >= 6) {
+            const lw = bold.widthOfTextAtSize('GLUE', 6.5);
+            if (vertical) page.drawText('GLUE', { x: X(sx + sw / 2) + 2.3, y: Y(sy + sh / 2) - lw / 2, size: 6.5, font: bold, color: WHITE, rotate: degrees(90) });
+            else page.drawText('GLUE', { x: X(sx + sw / 2) - lw / 2, y: Y(sy + sh / 2) - 2.3, size: 6.5, font: bold, color: WHITE });
+          }
         }
       }
-      if (m >= 4) {
-        const label = `${name}  ·  Row ${r + 1}, Col ${c + 1}  ·  Sheet ${r * p.cols + c + 1} of ${p.count}`;
-        page.drawText(label, { x: mmToPt(m), y: mmToPt(1.6), size: 6, font, color: gray });
+
+      // cut lines with scissors
+      if (s.cutLines) {
+        const cutRight = !overlap || c === p.cols - 1, cutBottom = !overlap || r === p.rows - 1;
+        const dash = { thickness: 1, color: RED, dashArray: [5, 3] };
+        const x0 = m, x1 = m + p.cw, y0 = m, y1 = m + p.ch;
+        const offX = Math.min(14, p.cw / 4), offY = Math.min(14, p.ch / 4);
+        page.drawLine({ start: { x: X(x0), y: Y(y0) }, end: { x: X(x0), y: Y(y1) }, ...dash });
+        page.drawLine({ start: { x: X(x0), y: Y(y0) }, end: { x: X(x1), y: Y(y0) }, ...dash });
+        scissors(page, SH, x0, y0 + offY, 90);
+        scissors(page, SH, x0 + offX, y0, 0);
+        if (cutRight) { page.drawLine({ start: { x: X(x1), y: Y(y0) }, end: { x: X(x1), y: Y(y1) }, ...dash }); scissors(page, SH, x1, y1 - offY, 270); }
+        if (cutBottom) { page.drawLine({ start: { x: X(x0), y: Y(y1) }, end: { x: X(x1), y: Y(y1) }, ...dash }); scissors(page, SH, x1 - offX, y1, 180); }
+
+        // which sheet goes where
+        const tag = (t: string, xmm: number, ymm: number, align: 'center' | 'left' | 'right') => {
+          const w = font.widthOfTextAtSize(t, 7) + 6, px = align === 'center' ? X(xmm) - w / 2 : align === 'left' ? X(xmm) : X(xmm) - w;
+          page.drawRectangle({ x: px, y: Y(ymm) - 5, width: w, height: 11, color: WHITE, opacity: 0.88 });
+          page.drawText(t, { x: px + 3, y: Y(ymm) - 2.2, size: 7, font, color: INK });
+        };
+        const n = (rr: number, cc: number) => rr * p.cols + cc + 1;
+        if (r > 0) tag(`Above: sheet ${n(r - 1, c)}`, m + p.cw / 2, m + 7, 'center');
+        if (r < p.rows - 1) tag(`Below: sheet ${n(r + 1, c)}`, m + p.cw / 2, m + p.ch - 7 - (overlap ? o : 0), 'center');
+        if (c > 0) tag(`Left: sheet ${n(r, c - 1)}`, m + 6, m + p.ch / 2, 'left');
+        if (c < p.cols - 1) tag(`Right: sheet ${n(r, c + 1)}`, m + p.cw - 6 - (overlap ? o : 0), m + p.ch / 2, 'right');
       }
+
+      // corner marks in the unprintable border
+      if (tick > 0.5) {
+        for (const x of [m, m + p.cw]) for (const y of [m, m + p.ch]) {
+          const px = X(x), py = Y(y);
+          const dx = x === m ? -1 : 1, dy = y === m ? 1 : -1; // outward
+          page.drawLine({ start: { x: px + dx * X(0.8), y: py }, end: { x: px + dx * X(0.8 + tick), y: py }, thickness: 0.4, color: GRAY });
+          page.drawLine({ start: { x: px, y: py + dy * X(0.8) }, end: { x: px, y: py + dy * X(0.8 + tick) }, thickness: 0.4, color: GRAY });
+        }
+      }
+      if (m >= 4) page.drawText(`${name}  ·  Row ${r + 1}, Col ${c + 1}  ·  Sheet ${r * p.cols + c + 1} of ${p.count}`, { x: X(m), y: X(1.6), size: 6, font, color: GRAY });
     }
   }
   doc.setTitle(name);

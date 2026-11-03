@@ -46,7 +46,7 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
   return (
     <div className="seg" role="group">
       {options.map(([v, label]) => (
-        <button key={v} className={value === v ? 'on' : ''} aria-pressed={value === v} onClick={() => onChange(v)}>{value === v && <Check />}{label}</button>
+        <button key={v} className={value === v ? 'on' : ''} aria-pressed={value === v} onClick={() => onChange(v)}>{label}</button>
       ))}
     </div>
   );

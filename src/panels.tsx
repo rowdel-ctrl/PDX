@@ -11,7 +11,7 @@ import { newPage } from './storage';
 import { PAGE_HIT } from './PageCanvas';
 import { More, Segmented, SliderRow, Swatches, Switch } from './ui';
 import type { Frame, PageImage } from './types';
-import { Back, Crop, Face, FrameIcon, Plus, RotR, Template, Trash, Type, Wand } from './icons';
+import { Back, Crop, Edit, Face, FrameIcon, Plus, RotR, Template, Trash, Type, Wand } from './icons';
 
 export const FRAME_SIZES: [string, number, number][] = [
   ['Passport 35×45', 35, 45], ['1×1 in', 25.4, 25.4], ['1.5×1.5 in', 38.1, 38.1], ['2×2 in', 50.8, 50.8], ['3×4 cm', 30, 40], ['Wallet 2×3 in', 50.8, 76.2],
@@ -253,7 +253,9 @@ export function TextPanel() {
 export function PagePanel() {
   const ed = useEd();
   const { page, unit, proj } = ed;
-  const [all, setAll] = useState(true);
+  const multi = proj.pages.length > 1;
+  const [scope, setScope] = useState<'this' | 'all'>('this');
+  const [custom, setCustom] = useState(false);
   const [wMm, setW] = useState(page.widthMm);
   const [hMm, setH] = useState(page.heightMm);
   useEffect(() => { setW(page.widthMm); setH(page.heightMm); }, [page.id, page.widthMm, page.heightMm]);
@@ -264,32 +266,42 @@ export function PagePanel() {
   const apply = (w: number, h: number) => {
     ed.edit((p) => ({
       ...p, widthMm: w, heightMm: h,
-      pages: p.pages.map((pg, k) => (all || k === ed.pi ? ed.relayout({ ...pg, widthMm: w, heightMm: h }) : pg)),
+      pages: p.pages.map((pg, k) => (scope === 'all' || k === ed.pi ? ed.relayout({ ...pg, widthMm: w, heightMm: h }) : pg)),
     }));
+    ed.say(scope === 'all' && multi ? 'Size applied to all pages' : 'Size applied');
   };
-  const pick = (name: string) => { const [a, b] = PRESETS[name]; apply(landscape ? b : a, landscape ? a : b); };
+  const pick = (name: string) => { const [a, b] = PRESETS[name]; setCustom(false); apply(landscape ? b : a, landscape ? a : b); };
   return (
     <div className="panel-body">
       <div className="field" style={{ marginTop: 0 }}>Paper
         <div className="chips">
-          {Object.keys(PRESETS).map((n) => <Chip key={n} on={preset === n} onClick={() => pick(n)}>{n}</Chip>)}
-          {!preset && <Chip on onClick={() => undefined}>Custom</Chip>}
+          {Object.keys(PRESETS).map((n) => <Chip key={n} on={!custom && preset === n} onClick={() => pick(n)}>{n}</Chip>)}
+          <button className={'chip custom' + (custom || !preset ? ' on' : '')} aria-pressed={custom || !preset} onClick={() => setCustom(!custom)}><Edit /> Custom</button>
         </div>
       </div>
-      <Segmented value={landscape ? 'l' : 'p'} onChange={(v) => { if ((v === 'l') !== landscape) apply(page.heightMm, page.widthMm); }} options={[['p', 'Portrait'], ['l', 'Landscape']]} />
+      {(custom || !preset) && (
+        <div className="field">Custom size
+          <div className="row">
+            <NumField label="Width" mm={wMm} unit={unit} onCommit={(mm) => setW(clampMm(mm))} />
+            <button className="btn" onClick={() => { setW(hMm); setH(wMm); }} aria-label="Swap width and height">⇄</button>
+            <NumField label="Height" mm={hMm} unit={unit} onCommit={(mm) => setH(clampMm(mm))} />
+            <Segmented<Unit> value={unit} onChange={(u) => ed.edit((p) => ({ ...p, unit: u }))} options={[['mm', 'mm'], ['cm', 'cm'], ['in', 'in']]} />
+          </div>
+        </div>
+      )}
+      {multi && (
+        <div className="tp-line"><span>Apply to</span>
+          <Segmented value={scope} onChange={setScope} options={[['this', 'This page'], ['all', `All ${proj.pages.length} pages`]]} />
+        </div>
+      )}
+      <div className="tp-line"><span>Direction</span>
+        <Segmented value={landscape ? 'l' : 'p'} onChange={(v) => { if ((v === 'l') !== landscape) apply(page.heightMm, page.widthMm); }} options={[['p', 'Portrait'], ['l', 'Landscape']]} />
+      </div>
+      {(custom || !preset) && <button className="btn primary wide" style={{ marginTop: 0 }} onClick={() => apply(wMm, hMm)}>Apply size</button>}
       <Swatches label="Page color" value={page.background} onChange={(c) => ed.editPage((pg) => ({ ...pg, background: c }))} />
       <Switch label="Page numbers" checked={proj.pageNumbers} onChange={(b) => ed.edit((p) => ({ ...p, pageNumbers: b }))} />
       <Switch label="Cutting lines around photos" hint="Thin line to cut along" checked={fb.on} onChange={(b) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, on: b } }))} />
       <More>
-        <div className="field">Custom paper size
-          <div className="row">
-            <NumField label="Width" mm={wMm} unit={unit} onCommit={(mm) => setW(clampMm(mm))} />
-            <NumField label="Height" mm={hMm} unit={unit} onCommit={(mm) => setH(clampMm(mm))} />
-            <Segmented<Unit> value={unit} onChange={(u) => ed.edit((p) => ({ ...p, unit: u }))} options={[['mm', 'mm'], ['cm', 'cm'], ['in', 'in']]} />
-          </div>
-          <button className="btn tonal" onClick={() => apply(wMm, hMm)}>Use this size</button>
-        </div>
-        <Switch label="Same size for all pages" checked={all} onChange={setAll} />
         <Switch label="Border around the page" checked={page.border.on} onChange={(b) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, on: b } }))} />
         {page.border.on && (
           <>
