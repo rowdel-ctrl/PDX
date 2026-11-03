@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { listProjects, removeProject, saveProject, startProject, type StartKind } from '../storage';
+import { duplicateProject, filesUsedElsewhere, listProjects, projectFiles, removeProject, saveProject, startProject, type StartKind } from '../storage';
 import { deleteImages } from '../images';
 import { fmt, presetOf } from '../units';
 import PageThumb from '../PageThumb';
@@ -8,7 +8,7 @@ import { askConfirm } from '../notify';
 import SizeSheet from '../SizeSheet';
 import { newPage } from '../storage';
 import { projectFromTemplate, TEMPLATES } from '../templates';
-import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Plus, Size, More, Tune, Close, Checklist } from '../icons';
+import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Plus, Size, More, Tune, Close, Checklist, Copy } from '../icons';
 
 export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, tab?: 'images' | 'frames' | 'layout') => void; onPoster: () => void }) {
   const [list, setList] = useState(listProjects);
@@ -24,12 +24,16 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
   const held = useRef<{ timer: number; fired: boolean }>({ timer: 0, fired: false });
   const toggle1 = (id: string) => setChosen((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
   const leavePick = () => { setPicking(false); setChosen([]); };
+  const dupMany = (ids: string[]) => {
+    list.filter((x) => ids.includes(x.id)).forEach((x) => saveProject(duplicateProject(x)));
+    refresh(); leavePick();
+  };
   const delMany = async () => {
     const ps = list.filter((x) => chosen.includes(x.id));
     if (!ps.length) return;
     if (!(await askConfirm({ title: `Delete ${ps.length} ${ps.length === 1 ? 'project' : 'projects'}?`, body: 'The projects and their photos are removed from this phone. This cannot be undone.', ok: 'Delete', danger: true }))) return;
-    const files = [...new Set(ps.flatMap((p) => [...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]), ...p.tray.map((t) => t.file)]))];
-    await deleteImages(files);
+    const keep = filesUsedElsewhere(ps.map((p) => p.id));
+    await deleteImages([...new Set(ps.flatMap(projectFiles))].filter((f) => !keep.has(f)));
     ps.forEach((p) => removeProject(p.id));
     refresh(); leavePick();
   };
@@ -62,7 +66,8 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
   const del = async (id: string) => {
     const p = list.find((x) => x.id === id)!;
     if (!(await askConfirm({ title: `Delete "${p.name}"?`, body: 'The project and its photos are removed from this phone. This cannot be undone.', ok: 'Delete', danger: true }))) return;
-    await deleteImages([...new Set([...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]), ...p.tray.map((t) => t.file)])]);
+    const keep = filesUsedElsewhere([p.id]);
+    await deleteImages(projectFiles(p).filter((f) => !keep.has(f)));
     removeProject(id); refresh(); setMenu(null);
   };
 
@@ -130,6 +135,7 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
                 {!picking && menu === p.id && (
                   <div className="menu">
                     <button onClick={() => rename(p.id)}><Edit /> Rename</button>
+                    <button onClick={() => { dupMany([p.id]); setMenu(null); }}><Copy /> Duplicate</button>
                     <button className="danger" onClick={() => del(p.id)}><Trash /> Delete</button>
                   </div>
                 )}
@@ -140,6 +146,7 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
       </main>
       {picking && (
         <footer className="footbar pickbar">
+          <button className="btn tonal" disabled={!chosen.length} onClick={() => dupMany(chosen)}><Copy /> Duplicate{chosen.length ? ` ${chosen.length}` : ''}</button>
           <button className="btn danger-outline" disabled={!chosen.length} onClick={delMany}><Trash /> Delete{chosen.length ? ` ${chosen.length}` : ''}</button>
         </footer>
       )}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayItem } from '../types';
-import { listProjects, newPage, saveProject } from '../storage';
+import { filesUsedElsewhere, listProjects, newPage, saveProject } from '../storage';
 import { applyLayout, cellCount, gridBox, LAYOUTS, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
 import { alignItems, distributeItems, findItem, gapItems, fillGrid, groupBox, mapSelected, reorder, scaleItems, selectWhere, setBoxMm, type SelectMode, type AlignMode, type AnyItem } from '../arrange';
 import { deleteImages, enhanceFile, evenLight as evenLightFile, FULL, importImage, makeCutout, newId, upscaleFile } from '../images';
@@ -121,7 +121,8 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     if (cur) {
       saveProject(cur);
       const keep = filesOf(cur);
-      deleteImages([...seen.current].filter((f) => !keep.has(f)));
+      const other = filesUsedElsewhere([cur.id]);
+      deleteImages([...seen.current].filter((f) => !keep.has(f) && !other.has(f)));
     }
     onBack();
   };

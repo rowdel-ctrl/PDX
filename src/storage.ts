@@ -33,6 +33,24 @@ export function removeProject(id: string) {
   localStorage.setItem(KEY, JSON.stringify(listProjects().filter((x) => x.id !== id)));
 }
 
+/** Every photo file a project uses. */
+export const projectFiles = (p: Project): string[] => [...new Set([
+  ...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]),
+  ...p.tray.map((t) => t.file),
+])];
+
+/** Photo files that projects other than these still use. Deleting a project must not remove them. */
+export function filesUsedElsewhere(excludeIds: string[]): Set<string> {
+  return new Set(listProjects().filter((x) => !excludeIds.includes(x.id)).flatMap(projectFiles));
+}
+
+/** A copy of a project that shares its photo files. */
+export function duplicateProject(p: Project): Project {
+  const now = Date.now();
+  const copy: Project = JSON.parse(JSON.stringify(p));
+  return { ...copy, id: newId(), name: `${p.name} copy`, created: now, updated: now, pages: copy.pages.map((pg) => ({ ...pg, id: newId() })) };
+}
+
 export function newPage(widthMm: number, heightMm: number): Page {
   return {
     id: newId(), widthMm, heightMm, background: '#FFFFFF',
