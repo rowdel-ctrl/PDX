@@ -243,6 +243,7 @@ export default function PageCanvas(p: {
   const lastBox = useRef('');
   const [hover, setHover] = useState<string | null>(null);
   const hoverRef = useRef<string | null>(null);
+  const pan1 = useRef<{ x: number; y: number } | null>(null);   // one-finger pan that started on empty page
 
   useEffect(() => {
     const el = desk.current!;
@@ -296,13 +297,21 @@ export default function PageCanvas(p: {
       const i = info(e); d0 = i.d; z0 = zoomRef.current; mid0 = { x: i.x, y: i.y };
     };
     const move = (e: TouchEvent) => {
+      if (e.touches.length === 1 && pan1.current) {
+        // one finger on empty page, zoomed in: scroll the view
+        e.preventDefault();
+        const t = e.touches[0];
+        el.scrollLeft -= t.clientX - pan1.current.x; el.scrollTop -= t.clientY - pan1.current.y;
+        pan1.current = { x: t.clientX, y: t.clientY };
+        return;
+      }
       if (e.touches.length !== 2 || !d0) return;
       e.preventDefault();
       const i = info(e);
       el.scrollLeft -= i.x - mid0.x; el.scrollTop -= i.y - mid0.y; mid0 = { x: i.x, y: i.y };
       zoomTo(z0 * (i.d / d0), i.x, i.y);
     };
-    const end = () => { d0 = 0; };
+    const end = () => { d0 = 0; pan1.current = null; };
     el.addEventListener('touchstart', start, { passive: true });
     el.addEventListener('touchmove', move, { passive: false });
     el.addEventListener('touchend', end);
@@ -433,7 +442,8 @@ export default function PageCanvas(p: {
           <div style={{ width: S.w, height: S.h, boxShadow: '0 2px 14px rgba(0,0,0,.25)' }}>
             <Stage ref={stageRef} width={S.w} height={S.h}>
               <Layer>
-                <Rect width={S.w} height={S.h} fill={page.background} onClick={p.onBlank} onTap={p.onBlank} />
+                <Rect width={S.w} height={S.h} fill={page.background} onClick={p.onBlank} onTap={p.onBlank}
+                  onTouchStart={(e) => { const t = (e.evt as TouchEvent).touches[0]; if (t && zoomRef.current > 1) pan1.current = { x: t.clientX, y: t.clientY }; }} />
                 {m > 2 && <Rect x={m} y={m} width={S.w - 2 * m} height={S.h - 2 * m} stroke="#8a93a6" dash={[5, 4]} strokeWidth={1} listening={false} />}
                 {page.images.map((im) => <ImageItem key={im.id} im={im} c={ctx} onChange={(pt) => p.onChange(im.id, pt)} onSwap={(b, cx, cy) => p.onSwap(im.id, b, cx, cy)} />)}
                 {page.frames.map((f) => <FrameItem key={f.id} f={f} c={ctx} onChange={(pt) => p.onChangeFrame(f.id, pt)} />)}
