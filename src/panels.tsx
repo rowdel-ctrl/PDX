@@ -17,6 +17,11 @@ import { Back, Crop, Edit, Face, FrameIcon, Plus, RotR, Template, Trash, Type, W
 export const FRAME_SIZES: [string, number, number][] = [
   ['Passport 35×45', 35, 45], ['1×1 in', 25.4, 25.4], ['1.5×1.5 in', 38.1, 38.1], ['2×2 in', 50.8, 50.8], ['3×4 cm', 30, 40], ['Wallet 2×3 in', 50.8, 76.2],
 ];
+const SIZE_CARDS: [string, string, number, number][] = [
+  ['Wallet', '2×3 in', 50.8, 76.2], ['2R', '2.5×3.5 in', 63.5, 88.9], ['3R', '3.5×5 in', 88.9, 127], ['4R', '4×6 in', 101.6, 152.4],
+  ['5R', '5×7 in', 127, 177.8], ['6R', '6×8 in', 152.4, 203.2], ['8R', '8×10 in', 203.2, 254],
+  ['Passport', '35×45 mm', 35, 45], ['2×2 in', '50.8 mm', 50.8, 50.8], ['1.5×1.5 in', '38.1 mm', 38.1, 38.1], ['1×1 in', '25.4 mm', 25.4, 25.4], ['3×4 cm', '30×40 mm', 30, 40],
+];
 const PHOTO_SIZES: [string, number, number][] = [
   ['Passport 35×45 mm', 35, 45], ['US 2×2 in', 50.8, 50.8], ['Wallet 2.5×3.5 in', 63.5, 88.9], ['4×6 in', 101.6, 152.4], ['5×7 in', 127, 177.8],
 ];
@@ -114,9 +119,18 @@ function FramesTab() {
   const n = fillFrames(page, size.w, size.h).length;
   return (
     <>
-      <p className="muted small" style={{ margin: 0 }}>1. Pick a size. 2. Fill the page with frames. 3. Add a photo. It goes in every frame. Use Crop to move or zoom it.</p>
-      <div className="chips">
-        {FRAME_SIZES.map(([name, w, h]) => <Chip key={name} on={Math.abs(size.w - w) < 0.2 && Math.abs(size.h - h) < 0.2} onClick={() => ed.setFsize(w, h)}>{name}</Chip>)}
+      <p className="muted small" style={{ margin: 0 }}>Pick a size, fill the page with frames, then add a photo. It goes in every frame. Use Crop to move or zoom it.</p>
+      <div className="size-grid">
+        {SIZE_CARDS.map(([name, label, w, h]) => {
+          const on = Math.abs(size.w - w) < 0.2 && Math.abs(size.h - h) < 0.2, k = 46 / Math.max(w, h);
+          return (
+            <button key={name} className={'tcard size-pick' + (on ? ' on' : '')} aria-pressed={on} onClick={() => ed.setFsize(w, h)}>
+              <span className="tcard-thumb"><span className="size-box" style={{ width: w * k, height: h * k }} /></span>
+              <span className="tcard-name">{name}</span>
+              <span className="tcard-sub">{label}</span>
+            </button>
+          );
+        })}
       </div>
       <button className="btn primary wide" style={{ marginTop: 0 }} disabled={!n} onClick={ed.fillWithFrames}>{n ? `Fill page with ${n} frames` : 'This size does not fit'}</button>
       <button className="btn tonal" onClick={ed.addFrame}><Plus /> Add just one frame</button>
@@ -137,11 +151,6 @@ function FramesTab() {
 }
 
 /** Photo print and ID sizes. Tap to add a frame of that size to this page, or hold and drag it onto the page. */
-const SIZE_CARDS: [string, string, number, number][] = [
-  ['Wallet', '2×3 in', 50.8, 76.2], ['2R', '2.5×3.5 in', 63.5, 88.9], ['3R', '3.5×5 in', 88.9, 127], ['4R', '4×6 in', 101.6, 152.4],
-  ['5R', '5×7 in', 127, 177.8], ['6R', '6×8 in', 152.4, 203.2], ['8R', '8×10 in', 203.2, 254],
-  ['Passport', '35×45 mm', 35, 45], ['2×2 in', '50.8 mm', 50.8, 50.8], ['1.5×1.5 in', '38.1 mm', 38.1, 38.1], ['1×1 in', '25.4 mm', 25.4, 25.4], ['3×4 cm', '30×40 mm', 30, 40],
-];
 
 function SizeCards() {
   const ed = useEd();
@@ -253,14 +262,14 @@ function TemplatesTab() {
 
 export function AddPanel() {
   const ed = useEd();
-  if (ed.addTab === 'frames') return <div className="panel-body"><SubHead title="ID photo frames" onBack={() => ed.setAddTab('photos')} /><FramesTab /></div>;
+  if (ed.addTab === 'frames') return <div className="panel-body"><SubHead title="Frame sizes" onBack={() => ed.setAddTab('photos')} /><FramesTab /></div>;
   if (ed.addTab === 'templates') return <div className="panel-body"><SubHead title="Templates" onBack={() => ed.setAddTab('photos')} /><TemplatesTab /></div>;
   return (
     <div className="panel-body">
       <Library />
       <div className="field">Also add
         <div className="row3">
-          <button className="btn tonal" onClick={() => ed.setAddTab('frames')}><FrameIcon /> ID frames</button>
+          <button className="btn tonal" onClick={() => ed.setAddTab('frames')}><FrameIcon /> Sizes</button>
           <button className="btn tonal" onClick={() => ed.setAddTab('templates')}><Template /> Templates</button>
           <button className="btn tonal" onClick={ed.addText}><Type /> Text</button>
         </div>

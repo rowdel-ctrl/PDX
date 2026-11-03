@@ -684,10 +684,12 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   })();
   const cropping = adjust && !!selFrame?.file;
   const showTools = !!panel;
+  // nothing to show in Add yet: keep the panel short
+  const compactAdd = panel === 'add' && addTab === 'photos' && proj.tray.length === 0;
 
   return (
     <EdCtx.Provider value={ed}>
-      <div className="screen">
+      <div className={'screen' + (compactAdd ? ' compact-add' : '')}>
         <header className="topbar">
           <button className="icon-btn" onClick={leave} aria-label="Back"><Back /></button>
           <button className="title-btn" onClick={renameProject}>
