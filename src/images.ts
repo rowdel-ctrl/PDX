@@ -115,17 +115,27 @@ export async function exportImage(path: string, rot: number, crop: Crop, quality
 
 const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-/** Remove the background of a photo (on this phone). Saves a new transparent PNG and returns it. */
-export async function makeCutout(path: string): Promise<{ file: string; aspect: number }> {
-  const img = await element(path);
-  const { personMask } = await import('./vision');
-  const m = await personMask(img);
-  const k = Math.min(1, 1800 / Math.max(img.naturalWidth, img.naturalHeight));
-  const w = Math.round(img.naturalWidth * k), h = Math.round(img.naturalHeight * k);
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const ctx = c.getContext('2d', { willReadFrequently: true })!;
-  ctx.drawImage(img, 0, 0, w, h);
-  // low-res mask -> smooth full-size mask
+/** Which photo a cut-out came from, so "Refine edges" can bring parts back. Kept on this phone. */
+const ORIG_KEY = 'pdx.cutorig';
+const origs: Record<string, string> = (() => { try { return JSON.parse(localStorage.getItem(ORIG_KEY) || '{}'); } catch { return {}; } })();
+const rememberOrig = (cut: string, orig: string) => { origs[cut] = origs[orig] ?? orig; try { localStorage.setItem(ORIG_KEY, JSON.stringify(origs)); } catch { /* full */ } };
+export const originalOf = (file: string): string | null => origs[file] ?? null;
+
+async function saveCutCanvas(c: HTMLCanvasElement, from: string): Promise<{ file: string; aspect: number }> {
+  const dataUrl = c.toDataURL('image/png');
+  const aspect = c.width / c.height;
+  const out = `images/${uid()}.png`;
+  await Filesystem.writeFile({ path: out, data: dataUrl.split(',')[1], directory: Directory.Data, recursive: true });
+  cache.set(out, dataUrl);
+  rememberOrig(out, from);
+  return { file: out, aspect };
+}
+
+/** Save an edited cut-out (from Refine edges). */
+export async function saveCutout(c: HTMLCanvasElement, from: string) { return saveCutCanvas(c, from); }
+
+/** Full-size alpha (0..255 in the alpha channel) from a low-res matte, smoothly scaled up. */
+function upscaleMatte(m: { data: Float32Array; w: number; h: number }, w: number, h: number): Uint8ClampedArray {
   const mc = document.createElement('canvas'); mc.width = m.w; mc.height = m.h;
   const mctx = mc.getContext('2d')!;
   const mi = mctx.createImageData(m.w, m.h);
@@ -135,14 +145,32 @@ export async function makeCutout(path: string): Promise<{ file: string; aspect: 
   const uctx = up.getContext('2d', { willReadFrequently: true })!;
   uctx.imageSmoothingQuality = 'high';
   uctx.drawImage(mc, 0, 0, w, h);
-  const ud = uctx.getImageData(0, 0, w, h).data;
+  const d = uctx.getImageData(0, 0, w, h).data;
+  mc.width = mc.height = up.width = up.height = 0;
+  return d;
+}
+
+/**
+ * Remove the background of a photo (on this phone). Saves a new transparent PNG and returns it.
+ * Uses MODNet (portrait matting); falls back to the simpler selfie mask if it cannot run.
+ */
+export async function makeCutout(path: string): Promise<{ file: string; aspect: number }> {
+  const img = await element(path);
+  const k = Math.min(1, 1800 / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.round(img.naturalWidth * k), h = Math.round(img.naturalHeight * k);
+  let ramp: [number, number] = [0.15, 0.9];   // matte: soft edge, trims the halo
+  let m: { data: Float32Array; w: number; h: number } | null = null;
+  try { m = await (await import('./modnet')).modnetMatte(img); }
+  catch (e) { console.warn('MODNet unavailable, using the simple mask', e); }
+  if (!m) { m = await (await import('./vision')).personMask(img); ramp = [0.4, 0.62]; }
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(img, 0, 0, w, h);
+  const ud = upscaleMatte(m, w, h);
   const id = ctx.getImageData(0, 0, w, h);
-  for (let i = 0; i < w * h; i++) id.data[4 * i + 3] = Math.round(smooth(0.4, 0.62, ud[4 * i + 3] / 255) * 255);
+  for (let i = 0; i < w * h; i++) id.data[4 * i + 3] = Math.round(smooth(ramp[0], ramp[1], ud[4 * i + 3] / 255) * 255);
   ctx.putImageData(id, 0, 0);
-  const dataUrl = c.toDataURL('image/png');
-  c.width = c.height = up.width = up.height = mc.width = mc.height = 0;
-  const out = `images/${uid()}.png`;
-  await Filesystem.writeFile({ path: out, data: dataUrl.split(',')[1], directory: Directory.Data, recursive: true });
-  cache.set(out, dataUrl);
-  return { file: out, aspect: w / h };
+  const res = await saveCutCanvas(c, path);
+  c.width = c.height = 0;
+  return res;
 }

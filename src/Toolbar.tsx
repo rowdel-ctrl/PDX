@@ -64,6 +64,7 @@ export function FloatingToolbar({ box, onPosition }: { box: SelBox; onPosition: 
           {im && ed.page.layout !== 'free' && <button onClick={() => { setMenu(false); ed.fillCell(im); }}>Fill cell</button>}
           {im && ed.page.layout !== 'free' && <button onClick={() => { setMenu(false); ed.fitCell(im); }}>Fit cell</button>}
           {(im || fr?.file) && <button onClick={() => { setMenu(false); ed.removeBackground((im ?? fr)!.id); }}>Remove background</button>}
+          {(im ?? fr)?.file.endsWith('.png') && <button onClick={() => { setMenu(false); ed.refineEdges((im ?? fr)!.id); }}>Refine edges</button>}
           {fr?.file && <button onClick={() => { setMenu(false); ed.centerFace(fr.id); }}>Center on face</button>}
           {fr?.file && <button onClick={() => { setMenu(false); ed.setPanel('item'); }}>Photo options and color</button>}
           {fr?.file && <button onClick={() => { setMenu(false); ed.detach(fr.id); }}>Take out of frame</button>}

@@ -4,6 +4,7 @@ import { listProjects, newPage, saveProject } from '../storage';
 import { applyLayout, cellCount, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
 import { alignItems, distributeItems, findItem, gapItems, groupBox, mapSelected, reorder, scaleItems, type AlignMode, type AnyItem } from '../arrange';
 import { deleteImages, FULL, importImage, makeCutout, newId } from '../images';
+import RefineEdges from '../RefineEdges';
 import { faceFit, findFaces, mainFace, type Face } from '../vision';
 import { useBack } from '../back';
 import PageCanvas, { type SelBox } from '../PageCanvas';
@@ -302,6 +303,27 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
       say('Could not remove the background on this phone.');
     }
   };
+  const [refine, setRefine] = useState<{ id: string; file: string; bg?: string } | null>(null);
+  const refineEdges = (id: string) => {
+    const it = findItem(page, id);
+    if (!it || it.kind === 'text') return;
+    const o = it.item as { file: string; bg?: string };
+    if (o.file) setRefine({ id, file: o.file, bg: o.bg });
+  };
+  const applyRefined = (id: string, cut: { file: string; aspect: number }) => {
+    const idx = pi;
+    seen.current.add(cut.file);
+    edit((p) => ({
+      ...p,
+      tray: [...p.tray, { id: newId(), file: cut.file, aspect: cut.aspect }],
+      pages: p.pages.map((pg, k) => (k !== idx ? pg : {
+        ...pg,
+        images: pg.images.map((i) => (i.id === id ? { ...i, file: cut.file, aspect: cut.aspect } : i)),
+        frames: pg.frames.map((f) => (f.id === id ? { ...f, file: cut.file, aspect: cut.aspect } : f)),
+      })),
+    }));
+    setRefine(null);
+  };
   const setBg = (id: string, color: string | undefined) => editPage((pg) => ({
     ...pg,
     images: pg.images.map((i) => (i.id === id ? { ...i, bg: color } : i)),
@@ -488,7 +510,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     addPhotos, addFromLibrary, removeFromLibrary, selTray, setSelTray, hit, setOver,
     fsize, setFsize: (w, h) => setFs({ w, h }), addFrame, fillWithFrames, clearFrames: () => { editPage((pg) => ({ ...pg, frames: [] })); setSel([]); },
     placePhoto, updateFrame: (fid, patch) => updateFrame(fid, patch), resizeFrame, rotateFrame, copyToAll,
-    detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, setBg,
+    detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, refineEdges, setBg,
     rotateImage, setCropSide, resetCrop, fillCell, fitCell, addText, updateText, setLayout, relayout, fillWith, applyTemplate,
     deleteSel, duplicateSel, toggleLock, scaleSel, align, distribute, order, setGap, selectAll, fitIntoFrame,
     addPage, dupPage, delPage, movePage, goPage, openGrid: () => setGridOpen(true),
@@ -580,6 +602,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
 
         {toast && <div className="toast" role="status">{toast}</div>}
         {exporting && <ExportSheet project={proj} onClose={() => setExporting(false)} />}
+        {refine && <RefineEdges file={refine.file} bg={refine.bg} onCancel={() => setRefine(null)} onDone={(c) => applyRefined(refine.id, c)} />}
         {posOpen && <PositionSheet onClose={() => setPosOpen(false)} />}
         {gridOpen && <PageGrid project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} onClose={() => setGridOpen(false)} />}
       </div>

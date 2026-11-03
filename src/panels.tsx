@@ -349,6 +349,7 @@ function BgControls({ id, file, bg }: { id: string; file: string; bg?: string })
   return (
     <>
       <button className="btn tonal" style={{ alignSelf: 'flex-start' }} onClick={() => ed.removeBackground(id)}><Wand /> {cut ? 'Remove background again' : 'Remove background'}</button>
+      {cut && <button className="btn tonal" style={{ alignSelf: 'flex-start' }} onClick={() => ed.refineEdges(id)}><Wand /> Refine edges</button>}
       {(cut || bg) && (
         <div className="field">Color behind the photo
           <div className="chips">

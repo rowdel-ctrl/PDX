@@ -33,6 +33,7 @@ export interface Ed {
   autoFace: boolean; setAutoFace: (b: boolean) => void;
   centerFace: (frameId: string) => void;
   removeBackground: (id: string) => void;
+  refineEdges: (id: string) => void;
   setBg: (id: string, color: string | undefined) => void;
   sameAll: boolean; setSameAll: (b: boolean) => void;
   adjust: boolean; setAdjust: (b: boolean) => void;
