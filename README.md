@@ -16,6 +16,3 @@ Optional release signing, add these repo secrets:
 - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`
 
 Local: `npm run build && npx cap sync android && cd android && ./gradlew assembleDebug`
-
-## Third-party
-Face centering uses [pico.js](https://github.com/nenadmarkus/pico) (MIT) and its `facefinder` cascade, bundled in `src/vendor/`. It runs fully offline.

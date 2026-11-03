@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEd } from './editorContext';
 import type { SelBox } from './PageCanvas';
-import { AlignB, AlignC, AlignL, AlignM, AlignR, AlignT, Close, Copy, Crop, DistH, DistV, Edit, Layers, Lock, Move, More, RotR, Trash, Tune, Unlock } from './icons';
+import { AlignB, AlignC, AlignL, AlignM, AlignR, AlignT, Close, Copy, Crop, DistH, DistV, Edit, Image, Layers, Lock, More, RotR, Trash, Tune, Unlock } from './icons';
 
-interface Btn { key: string; label: string; icon: React.ReactElement; on: () => void; active?: boolean; danger?: boolean }
+interface Btn { key: string; label: string; icon: React.ReactElement; on: () => void; active?: boolean; danger?: boolean; text?: string }
 
 export function FloatingToolbar({ box, onPosition }: { box: SelBox; onPosition: () => void }) {
   const ed = useEd();
@@ -24,16 +24,21 @@ export function FloatingToolbar({ box, onPosition }: { box: SelBox; onPosition: 
     btns.push({ key: 'rot', label: 'Rotate 90°', icon: <RotR />, on: () => ed.rotateImage(im, 1) });
     btns.push({ key: 'edit', label: 'Crop and edit', icon: <Crop />, on: () => ed.setPanel(ed.panel === 'item' ? null : 'item'), active: ed.panel === 'item' });
   } else if (fr) {
-    if (fr.file) btns.push({ key: 'move', label: ed.adjust ? 'Done moving photo' : 'Move photo in frame', icon: <Move />, on: () => ed.setAdjust(!ed.adjust), active: ed.adjust });
-    if (fr.file) btns.push({ key: 'rot', label: 'Rotate photo', icon: <RotR />, on: () => ed.rotateFrame(fr, 1) });
-    btns.push({ key: 'edit', label: 'Frame options', icon: <Tune />, on: () => ed.setPanel(ed.panel === 'item' ? null : 'item'), active: ed.panel === 'item' });
+    if (fr.file) {
+      btns.push({ key: 'crop', label: 'Crop: move and zoom the photo', icon: <Crop />, text: 'Crop', on: () => ed.setAdjust(true) });
+      btns.push({ key: 'replace', label: 'Replace photo', icon: <Image />, on: () => { ed.setAddTab('photos'); ed.setPanel('add'); } });
+      btns.push({ key: 'rot', label: 'Rotate photo', icon: <RotR />, on: () => ed.rotateFrame(fr, 1) });
+    } else {
+      btns.push({ key: 'add', label: 'Add a photo', icon: <Image />, text: 'Add photo', on: () => { ed.setAddTab('photos'); ed.setPanel('add'); } });
+      btns.push({ key: 'edit', label: 'Frame options', icon: <Tune />, on: () => ed.setPanel(ed.panel === 'item' ? null : 'item'), active: ed.panel === 'item' });
+    }
   } else if (tx) btns.push({ key: 'edit', label: 'Edit text', icon: <Edit />, on: () => ed.setPanel('text') });
   btns.push({ key: 'dup', label: 'Duplicate', icon: <Copy />, on: ed.duplicateSel });
   btns.push({ key: 'lock', label: locked ? 'Unlock' : 'Lock', icon: locked ? <Unlock /> : <Lock />, on: ed.toggleLock, active: locked });
   btns.push({ key: 'del', label: 'Delete', icon: <Trash />, on: ed.deleteSel, danger: true });
   if (!multi) btns.push({ key: 'more', label: 'More', icon: <More />, on: () => setMenu((m) => !m), active: menu });
 
-  const half = (btns.length * 40 + 12) / 2;
+  const half = (btns.length * 38 + 12 + btns.filter((b) => b.text).length * 64) / 2;
   const cx = Math.min(parentW - half - 8, Math.max(half + 8, box.x + box.w / 2));
   const above = box.y - 84;           // leaves room for the rotate handle
   const top = above < 6 ? Math.min(box.y + box.h + 18, 9999) : above;
@@ -43,18 +48,18 @@ export function FloatingToolbar({ box, onPosition }: { box: SelBox; onPosition: 
     <div ref={ref} className="ftb" style={{ left: cx, top }} role="toolbar" aria-label="Item actions">
       <div className="ftb-row">
         {btns.map((b) => (
-          <button key={b.key} className={'ftb-btn' + (b.active ? ' on' : '') + (b.danger ? ' danger' : '')} aria-label={b.label} aria-pressed={b.active} onClick={b.on}>{b.icon}</button>
+          <button key={b.key} className={'ftb-btn' + (b.active ? ' on' : '') + (b.danger ? ' danger' : '') + (b.text ? ' label' : '')} aria-label={b.label} aria-pressed={b.active} onClick={b.on}>{b.icon}{b.text}</button>
         ))}
       </div>
       {menu && (
-        <div className="ftb-menu" style={menuBelow ? { bottom: 'auto', top: 56 } : undefined}>
+        <div className="ftb-menu" style={menuBelow ? { bottom: 'auto', top: 54 } : undefined}>
           <button onClick={() => { setMenu(false); onPosition(); }}><Layers /> Position and align</button>
           <button onClick={() => { setMenu(false); ed.order('front'); }}>Bring to front</button>
           <button onClick={() => { setMenu(false); ed.order('back'); }}>Send to back</button>
           {im && ed.page.layout !== 'free' && <button onClick={() => { setMenu(false); ed.fillCell(im); }}>Fill cell</button>}
           {im && ed.page.layout !== 'free' && <button onClick={() => { setMenu(false); ed.fitCell(im); }}>Fit cell</button>}
-          {fr?.file && <button onClick={() => { setMenu(false); ed.centerFace(fr.id); }}>Center face</button>}
-          {fr?.file && <button onClick={() => { setMenu(false); ed.copyToAll(fr); }}>Copy to all frames</button>}
+          {fr?.file && <button onClick={() => { setMenu(false); ed.detach(fr.id); }}>Take out of frame</button>}
+          {fr?.file && <button onClick={() => { setMenu(false); ed.copyToAll(fr); }}>Use in all frames</button>}
         </div>
       )}
     </div>

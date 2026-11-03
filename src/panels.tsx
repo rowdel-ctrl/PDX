@@ -10,7 +10,7 @@ import { GROUPS, TEMPLATES } from './templates';
 import { newPage } from './storage';
 import { PAGE_HIT } from './PageCanvas';
 import { More, Segmented, SliderRow, Swatches, Switch } from './ui';
-import { Back, Face, FrameIcon, Plus, RotR, Template, Trash, Type } from './icons';
+import { Back, Crop, FrameIcon, Plus, RotR, Template, Trash, Type } from './icons';
 
 export const FRAME_SIZES: [string, number, number][] = [
   ['Passport 35×45', 35, 45], ['1×1 in', 25.4, 25.4], ['1.5×1.5 in', 38.1, 38.1], ['2×2 in', 50.8, 50.8], ['3×4 cm', 30, 40], ['Wallet 2×3 in', 50.8, 76.2],
@@ -112,7 +112,7 @@ function FramesTab() {
   const n = fillFrames(page, size.w, size.h).length;
   return (
     <>
-      <p className="muted small" style={{ margin: 0 }}>1. Pick a size. 2. Fill the page with frames. 3. Add a photo. It goes in every frame and the face is centered.</p>
+      <p className="muted small" style={{ margin: 0 }}>1. Pick a size. 2. Fill the page with frames. 3. Add a photo. It goes in every frame. Use Crop to move or zoom it.</p>
       <div className="chips">
         {FRAME_SIZES.map(([name, w, h]) => <Chip key={name} on={Math.abs(size.w - w) < 0.2 && Math.abs(size.h - h) < 0.2} onClick={() => ed.setFsize(w, h)}>{name}</Chip>)}
       </div>
@@ -127,8 +127,6 @@ function FramesTab() {
           </div>
         </div>
         <Switch label="Same photo in every frame" hint="When all frames are empty" checked={ed.sameAll} onChange={ed.setSameAll} />
-        <Switch label="Center faces automatically" checked={ed.autoFace} onChange={ed.setAutoFace} />
-        {page.frames.some((f) => f.file) && <button className="btn tonal" onClick={ed.centerAll}><Face /> Center faces in all frames</button>}
         {page.frames.length > 0 && <button className="btn danger-outline" onClick={ed.clearFrames}><Trash /> Remove all frames</button>}
       </More>
     </>
@@ -343,23 +341,15 @@ export function ItemPanel() {
     return (
       <div className="panel-body">
         {fr.file ? (
-          <>
-            <SliderRow label="Zoom" value={fr.zoom} min={1} max={4} step={0.02} suffix={`${Math.round(fr.zoom * 100)}%`} onChange={(v) => ed.updateFrame(fr.id, { zoom: v })} />
-            <div className="tools">
-              <button className={'btn' + (ed.adjust ? ' on' : '')} onClick={() => ed.setAdjust(!ed.adjust)}>{ed.adjust ? 'Done' : 'Move photo'}</button>
-              <button className="btn tonal" onClick={() => ed.centerFace(fr.id)}><Face /> Center face</button>
-            </div>
-            {ed.adjust && <span className="muted small">Drag the photo inside the frame.</span>}
-          </>
-        ) : <p className="muted small" style={{ margin: 0 }}>This frame is empty. Open Add and tap a photo to put it here.</p>}
-        <More>
-          {fr.file && (
-            <div className="tools">
-              <button className="btn" onClick={() => ed.rotateFrame(fr, 1)}><RotR /> Turn photo</button>
-              <button className="btn" onClick={() => ed.copyToAll(fr)}>Use in all frames</button>
-              <button className="btn" onClick={() => ed.updateFrame(fr.id, { file: '', zoom: 1, cx: 0.5, cy: 0.5, rot: 0 })}>Remove photo</button>
-            </div>
-          )}
+          <div className="tools">
+            <button className="btn primary" onClick={() => { ed.setAdjust(true); ed.setPanel(null); }}><Crop /> Crop</button>
+            <button className="btn" onClick={() => ed.rotateFrame(fr, 1)}><RotR /> Turn</button>
+            <button className="btn tonal" onClick={() => ed.copyToAll(fr)}>Use in all frames</button>
+            <button className="btn" onClick={() => ed.detach(fr.id)}>Take out of frame</button>
+            <button className="btn" onClick={() => ed.updateFrame(fr.id, { file: '', zoom: 1, cx: 0.5, cy: 0.5, rot: 0 })}>Remove photo</button>
+          </div>
+        ) : <p className="muted small" style={{ margin: 0 }}>This frame is empty. Open Add and tap a photo, or drag a photo onto it.</p>}
+        <More title="Frame size">
           <div className="row" style={{ alignItems: 'center' }}>
             <span className="muted small">This frame: {fmt(fr.w * ed.page.widthMm, unit)} × {fmt(fr.h * ed.page.heightMm, unit)} {unit}</span>
             <button className="btn" onClick={() => ed.resizeFrame(fr, fsize.w, fsize.h)}>Change to {fmt(fsize.w, unit)}×{fmt(fsize.h, unit)} {unit}</button>

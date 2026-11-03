@@ -29,8 +29,7 @@ export interface Ed {
   resizeFrame: (f: Frame, w: number, h: number) => void;
   rotateFrame: (f: Frame, dir: 1 | -1) => void;
   copyToAll: (f: Frame) => void;
-  centerFace: (id: string) => void; centerAll: () => void;
-  autoFace: boolean; setAutoFace: (b: boolean) => void;
+  detach: (frameId: string) => void;
   sameAll: boolean; setSameAll: (b: boolean) => void;
   adjust: boolean; setAdjust: (b: boolean) => void;
   // images

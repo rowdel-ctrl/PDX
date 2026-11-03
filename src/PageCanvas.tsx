@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Group, Image as KImage, Layer, Line, Rect, Stage, Text as KText, Transformer } from 'react-konva';
+import { Circle, Group, Image as KImage, Layer, Line, Rect, Stage, Text as KText, Transformer } from 'react-konva';
 import Konva from 'konva';
 import type { Frame, FrameBorder, Page, PageImage, PageText, Unit } from './types';
 import { FULL, variantUrl } from './images';
@@ -9,7 +9,8 @@ import { fmt } from './units';
 const SNAP_PX = 8;
 const PT_MM = 25.4 / 72;
 const GUIDE = '#FF2D95';
-const PRIMARY = '#4355B9';
+const PRIMARY = '#7C5CFF';
+const TEAL = '#14B8A6';
 export const PAGE_HIT = '__page__';
 
 type Guides = { v: number[]; h: number[] };
@@ -55,6 +56,7 @@ interface Ctx {
   dragEnd: (id: string) => void;
   setHud: (s: string) => void;
   setGuides: (g: Guides) => void;
+  hovered: () => string | null;
 }
 
 function ImageItem({ im, c, onChange, onSwap }: {
@@ -78,7 +80,7 @@ function ImageItem({ im, c, onChange, onSwap }: {
       onDragMove={(e) => { c.dragMove(im.id, e.target); hud(e.target); }}
       onDragEnd={(e) => {
         const n = e.target;
-        if (page.layout !== '1' && page.layout !== 'free' && page.images.length > 1 && c.selected.size <= 1) {
+        if (!c.hovered() && page.layout !== '1' && page.layout !== 'free' && page.images.length > 1 && c.selected.size <= 1) {
           const hit = page.images.find((o) => o.id !== im.id && n.x() > o.x * S.w && n.x() < (o.x + o.w) * S.w && n.y() > o.y * S.h && n.y() < (o.y + o.h) * S.h);
           if (hit) { c.setGuides({ v: [], h: [] }); c.setHud(''); n.position(start.current); onSwap(hit.id, start.current.x / S.w, start.current.y / S.h); c.dragEnd('__none__'); return; }
         }
@@ -108,21 +110,38 @@ function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial
   const pan = useRef({ px: 0, py: 0, cx: 0, cy: 0 });
   const dropTarget = c.dropTarget === f.id;
   const regFn = c.reg(f.id);
+  const prev = useRef(f.file);
+  // springy pop when a photo lands in the frame
+  useEffect(() => {
+    const n = node.current;
+    if (f.file && prev.current !== f.file && n) {
+      n.scale({ x: 1.06, y: 1.06 });
+      new Konva.Tween({ node: n, scaleX: 1, scaleY: 1, duration: 0.38, easing: Konva.Easings.BackEaseOut }).play();
+    }
+    prev.current = f.file;
+  }, [f.file]);
   return (
     <Group
       ref={(n) => { node.current = n; regFn(n); }}
-      x={f.x * S.w} y={f.y * S.h} width={fw} height={fh}
+      x={f.x * S.w + fw / 2} y={f.y * S.h + fh / 2} offsetX={fw / 2} offsetY={fh / 2} width={fw} height={fh}
       draggable={!adjusting && !f.locked} onClick={() => c.pick(f.id, 'tap')} onTap={() => c.pick(f.id, 'tap')}
       onDragStart={() => c.dragStart(f.id)}
       onDragMove={(e) => { c.dragMove(f.id, e.target); c.setHud(`${fmt(f.w * page.widthMm, unit)} × ${fmt(f.h * page.heightMm, unit)} ${unit}`); }}
       onDragEnd={() => c.dragEnd(f.id)}
     >
-      <Rect width={fw} height={fh} fill={img ? '#fff' : dropTarget ? '#FFD0E6' : '#EEF0FF'} />
+      {adjusting && img && (
+        <KImage image={img} x={(-crop.x * fw) / crop.w} y={(-crop.y * fh) / crop.h} width={fw / crop.w} height={fh / crop.h} opacity={0.38}
+          onClick={(e) => { const q = e.target.getRelativePointerPosition(); if (q) onChange({ cx: q.x / (fw / crop.w), cy: q.y / (fh / crop.h) }); }}
+          onTap={(e) => { const q = e.target.getRelativePointerPosition(); if (q) onChange({ cx: q.x / (fw / crop.w), cy: q.y / (fh / crop.h) }); }} />
+      )}
+      <Rect width={fw} height={fh} cornerRadius={4} fill={img ? '#fff' : dropTarget ? 'rgba(20,184,166,.16)' : '#F5F4FF'} />
       {img && (
         <KImage
           image={img} width={fw} height={fh}
           crop={{ x: crop.x * img.width, y: crop.y * img.height, width: crop.w * img.width, height: crop.h * img.height }}
           draggable={adjusting}
+          onClick={(e) => { if (!adjusting) return; const q = e.target.getRelativePointerPosition(); if (q) onChange({ cx: crop.x + (q.x / fw) * crop.w, cy: crop.y + (q.y / fh) * crop.h }); }}
+          onTap={(e) => { if (!adjusting) return; const q = e.target.getRelativePointerPosition(); if (q) onChange({ cx: crop.x + (q.x / fw) * crop.w, cy: crop.y + (q.y / fh) * crop.h }); }}
           onDragStart={(e) => { const p = e.target.getStage()!.getPointerPosition()!; pan.current = { px: p.x, py: p.y, cx: f.cx, cy: f.cy }; }}
           onDragMove={(e) => {
             const p = e.target.getStage()!.getPointerPosition()!;
@@ -133,7 +152,7 @@ function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial
         />
       )}
       {!img && (
-        <KText width={fw} height={fh} align="center" verticalAlign="middle" fontSize={Math.max(9, Math.min(fw, fh) / 6)} fill="#5B6372" listening={false}
+        <KText width={fw} height={fh} align="center" verticalAlign="middle" fontSize={Math.max(9, Math.min(fw, fh) / 6)} fill="#7A7F94" listening={false}
           text={f.file ? '…' : `Drop photo\n${fmt(f.w * page.widthMm, unit)}×${fmt(f.h * page.heightMm, unit)} ${unit}`} />
       )}
       {c.cropMarks && img && cropMarkSegments(f.w * page.widthMm, f.h * page.heightMm).map((q, i) => (
@@ -144,7 +163,13 @@ function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial
         return <Rect x={r.x * kz} y={r.y * kz} width={r.w * kz} height={r.h * kz} stroke={border.color} strokeWidth={Math.max(1, border.widthMm * kz)} listening={false} />;
       })()}
       {(dropTarget || !img) && (
-        <Rect width={fw} height={fh} listening={false} stroke={dropTarget ? GUIDE : '#8a93a6'} strokeWidth={dropTarget ? 2 : 1} dash={img ? undefined : [5, 4]} />
+        <Rect width={fw} height={fh} cornerRadius={4} listening={false} stroke={dropTarget ? TEAL : '#B9B4E6'} strokeWidth={dropTarget ? 2.5 : 1.2} dash={img ? undefined : [5, 4]} />
+      )}
+      {adjusting && (
+        <>
+          <Rect width={fw} height={fh} listening={false} stroke={PRIMARY} strokeWidth={2} />
+          {[[0, 0], [fw, 0], [0, fh], [fw, fh]].map(([x, y], i) => <Circle key={i} x={x} y={y} radius={7} fill="#fff" stroke={PRIMARY} strokeWidth={2} listening={false} shadowColor="#000" shadowBlur={4} shadowOpacity={0.25} />)}
+        </>
       )}
     </Group>
   );
@@ -184,6 +209,7 @@ export default function PageCanvas(p: {
   adjust: boolean; dropTarget: string | null; border: FrameBorder; cropMarks: boolean;
   hitRef: React.MutableRefObject<((x: number, y: number) => string | null) | null>;
   onSelBox: (b: SelBox | null) => void; onDragging: (d: boolean) => void;
+  padB?: number; reserve?: string; focusId?: string | null; onSnap: (imgId: string, frameId: string) => void;
   children?: React.ReactNode;
 }) {
   const { page, selectedIds } = p;
@@ -203,6 +229,8 @@ export default function PageCanvas(p: {
   const dragOrigin = useRef<{ id: string; x: number; y: number } | null>(null);
   const hapticKey = useRef('');
   const lastBox = useRef('');
+  const [hover, setHover] = useState<string | null>(null);
+  const hoverRef = useRef<string | null>(null);
 
   useEffect(() => {
     const el = desk.current!;
@@ -223,6 +251,24 @@ export default function PageCanvas(p: {
     anchor.current = { fx: (el.scrollLeft + x) / el.scrollWidth, fy: (el.scrollTop + y) / el.scrollHeight, vx: x, vy: y };
     setZoom(nz);
   };
+
+  // Crop mode: zoom in on the frame being cropped, and back out afterwards.
+  const focusFrame = p.focusId ? page.frames.find((q) => q.id === p.focusId) : undefined;
+  const autoZoomed = useRef(false);
+  const focusKey = focusFrame ? `${focusFrame.id}|${avail.w}|${avail.h}` : '';
+  useEffect(() => {
+    if (!focusFrame) { if (autoZoomed.current) { autoZoomed.current = false; setZoom(1); } return; }
+    const k = Math.max(0.01, Math.min((avail.w - 24) / page.widthMm, (avail.h - 10 - (p.padB ?? 24)) / page.heightMm));
+    const fw1 = focusFrame.w * page.widthMm * k, fh1 = focusFrame.h * page.heightMm * k;
+    const z = Math.min(5, Math.max(1, Math.min((avail.w - 56) / fw1, (avail.h - 56) / fh1)));
+    autoZoomed.current = true; anchor.current = null; setZoom(z);
+  }, [focusKey]);
+  useLayoutEffect(() => {
+    const el = desk.current;
+    if (!el || !focusFrame || !autoZoomed.current) return;
+    const cx = 12 + (focusFrame.x + focusFrame.w / 2) * S.w, cy = 10 + (focusFrame.y + focusFrame.h / 2) * S.h;
+    el.scrollLeft = cx - el.clientWidth / 2; el.scrollTop = cy - el.clientHeight / 2;
+  }, [zoom, focusKey]);
 
   // two-finger pinch to zoom and pan
   useEffect(() => {
@@ -253,8 +299,8 @@ export default function PageCanvas(p: {
 
   useEffect(() => { const c = stageRef.current?.content; if (c) c.style.touchAction = 'none'; }, []);
 
-  const pad = 24;
-  const kFit = Math.max(0.01, Math.min((avail.w - pad * 2) / page.widthMm, (avail.h - pad * 2) / page.heightMm));
+  const padT = 10, padX = 12, padB = p.padB ?? 24;
+  const kFit = Math.max(0.01, Math.min((avail.w - padX * 2) / page.widthMm, (avail.h - padT - padB) / page.heightMm));
   const kz = kFit * zoom;
   const S = { w: page.widthMm * kz, h: page.heightMm * kz };
   const m = page.marginMm * kz;
@@ -279,8 +325,8 @@ export default function PageCanvas(p: {
   };
 
   const ctx: Ctx = {
-    S, kz, m, unit: p.unit, page, selected, adjust: p.adjust, dropTarget: p.dropTarget, border: p.border, cropMarks: p.cropMarks,
-    reg, setHud, setGuides,
+    S, kz, m, unit: p.unit, page, selected, adjust: p.adjust, dropTarget: p.dropTarget ?? hover, border: p.border, cropMarks: p.cropMarks,
+    reg, setHud, setGuides, hovered: () => hoverRef.current,
     pick: p.onPick,
     dragStart: (id) => {
       p.onPick(id, 'drag');
@@ -292,6 +338,11 @@ export default function PageCanvas(p: {
       p.onDragging(true);
     },
     dragMove: (id, node) => {
+      if (page.images.some((i) => i.id === id) && starts.current.size <= 1) {
+        const f = [...page.frames].reverse().find((q) => node.x() > q.x * S.w && node.x() < (q.x + q.w) * S.w && node.y() > q.y * S.h && node.y() < (q.y + q.h) * S.h);
+        const nid = f ? f.id : null;
+        if (nid !== hoverRef.current) { hoverRef.current = nid; setHover(nid); if (nid) navigator.vibrate?.(10); }
+      }
       if (starts.current.size <= 1) { const g = snap(node, boxes(new Set([id])), S, m); haptic(g); setGuides(g); return; }
       const o = starts.current.get(id)!;
       const dx = node.x() - o.x, dy = node.y() - o.y;
@@ -300,10 +351,13 @@ export default function PageCanvas(p: {
     },
     dragEnd: (id) => {
       setGuides({ v: [], h: [] }); setHud(''); p.onDragging(false); hapticKey.current = '';
+      const snapTo = hoverRef.current;
+      hoverRef.current = null; setHover(null);
+      if (snapTo && starts.current.size <= 1 && page.images.some((i) => i.id === id)) { starts.current = new Map(); p.onSnap(id, snapTo); return; }
       const moves: { id: string; x: number; y: number }[] = [];
       for (const sid of starts.current.keys()) {
         const n = nodes.current.get(sid); if (!n) continue;
-        const im = page.images.find((i) => i.id === sid);
+        const im = page.images.find((i) => i.id === sid) ?? page.frames.find((q) => q.id === sid);
         moves.push(im ? { id: sid, x: n.x() / S.w - im.w / 2, y: n.y() / S.h - im.h / 2 } : { id: sid, x: n.x() / S.w, y: n.y() / S.h });
       }
       starts.current = new Map();
@@ -358,9 +412,9 @@ export default function PageCanvas(p: {
   const pnSize = 10 * PT_MM * kz;
 
   return (
-    <div className="deskwrap" ref={wrap}>
+    <div className="deskwrap" ref={wrap} style={{ marginBottom: p.reserve }}>
       <div className={'desk' + (zoom > 1 ? ' zoomed' : '')} ref={desk}>
-        <div style={{ margin: 'auto', padding: pad }}>
+        <div style={{ margin: 'auto', padding: `${padT}px ${padX}px ${padB}px` }}>
           <div style={{ width: S.w, height: S.h, boxShadow: '0 2px 14px rgba(0,0,0,.25)' }}>
             <Stage ref={stageRef} width={S.w} height={S.h}>
               <Layer>
