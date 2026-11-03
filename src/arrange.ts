@@ -124,3 +124,30 @@ export function reorder(page: Page, id: string, to: 'front' | 'back'): Page {
   };
   return { ...page, images: mv(page.images), frames: mv(page.frames), texts: mv(page.texts) };
 }
+
+/**
+ * Set the gaps between the selected items. Items are grouped into rows by height; each row is spaced left to right
+ * (gx mm apart) and rows are spaced top to bottom (gy mm apart). The top-left of the selection stays where it is.
+ */
+export function gapItems(page: Page, ids: string[], gx: number, gy: number): Page {
+  const refs = ids.map((id) => findItem(page, id)).filter((r): r is { kind: Kind; item: AnyItem } => !!r && !(r.item as { locked?: boolean }).locked);
+  if (refs.length < 2) return page;
+  const items = refs.map((r) => ({ id: (r.item as { id: string }).id, b: itemBox(page, r.kind, r.item) }));
+  const left = Math.min(...items.map((i) => i.b.x)), top = Math.min(...items.map((i) => i.b.y));
+  const sorted = [...items].sort((a, b) => a.b.y + a.b.h / 2 - (b.b.y + b.b.h / 2));
+  const rows: typeof items[] = [];
+  for (const it of sorted) {
+    const row = rows.find((r) => Math.abs(r[0].b.y + r[0].b.h / 2 - (it.b.y + it.b.h / 2)) < Math.max(r[0].b.h, it.b.h) * 0.5);
+    if (row) row.push(it); else rows.push([it]);
+  }
+  rows.sort((a, b) => Math.min(...a.map((i) => i.b.y)) - Math.min(...b.map((i) => i.b.y)));
+  const delta = new Map<string, [number, number]>();
+  let y = top;
+  for (const row of rows) {
+    row.sort((a, b) => a.b.x - b.b.x);
+    let x = left;
+    for (const it of row) { delta.set(it.id, [x - it.b.x, y - it.b.y]); x += it.b.w + gx; }
+    y += Math.max(...row.map((i) => i.b.h)) + gy;
+  }
+  return mapSelected(page, new Set(delta.keys()), (_k, item) => { const d = delta.get((item as { id: string }).id)!; return shifted(item, page, d[0], d[1]); });
+}

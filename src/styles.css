@@ -263,3 +263,5 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .size-card.custom.on{border-style:solid}
 .size-card svg{width:26px;height:26px}
 .tp-main>*{flex:none}
+.chip-hint button{margin-left:8px;border:0;border-radius:8px;background:var(--bg);color:var(--text);font-size:11px;font-weight:600;padding:3px 8px;pointer-events:auto}
+.chip-hint{pointer-events:auto}

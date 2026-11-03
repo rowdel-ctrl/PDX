@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayItem } from '../types';
 import { listProjects, newPage, saveProject } from '../storage';
 import { applyLayout, cellCount, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
-import { alignItems, distributeItems, findItem, mapSelected, reorder, type AlignMode, type AnyItem } from '../arrange';
+import { alignItems, distributeItems, findItem, gapItems, mapSelected, reorder, type AlignMode, type AnyItem } from '../arrange';
 import { deleteImages, FULL, importImage, makeCutout, newId } from '../images';
 import { faceFit, findFaces, mainFace, type Face } from '../vision';
 import { useBack } from '../back';
@@ -411,6 +411,18 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
       return mapSelected(pg, ids, (_k, item: AnyItem) => ({ ...item, locked: !all }) as AnyItem);
     });
   };
+  const setGap = (gx: number, gy: number) => editPage((pg) => gapItems(pg, selIds, gx, gy));
+  const selectAll = () => setSel([...page.frames.map((f) => f.id), ...page.images.map((i) => i.id), ...page.texts.map((t) => t.id)]);
+  /** Put a loose photo into the nearest frame (an empty one if there is one). */
+  const fitIntoFrame = (imgId: string) => {
+    const im = page.images.find((i) => i.id === imgId);
+    if (!im || !page.frames.length) { say('Add a frame first'); return; }
+    const c = { x: im.x + im.w / 2, y: im.y + im.h / 2 };
+    const dist = (f: Frame) => Math.hypot(f.x + f.w / 2 - c.x, f.y + f.h / 2 - c.y);
+    const pool = page.frames.some((f) => !f.file) ? page.frames.filter((f) => !f.file) : page.frames;
+    const target = [...pool].sort((a, b) => dist(a) - dist(b))[0];
+    snapIntoFrame(imgId, target.id);
+  };
   const align = (m: AlignMode) => editPage((pg) => alignItems(pg, selIds, m));
   const distribute = (axis: 'x' | 'y') => editPage((pg) => distributeItems(pg, selIds, axis));
   const order = (to: 'front' | 'back') => { if (selIds.length === 1) editPage((pg) => reorder(pg, selIds[0], to)); };
@@ -469,7 +481,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     placePhoto, updateFrame: (fid, patch) => updateFrame(fid, patch), resizeFrame, rotateFrame, copyToAll,
     detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, setBg,
     rotateImage, setCropSide, resetCrop, fillCell, fitCell, addText, updateText, setLayout, relayout, fillWith, applyTemplate,
-    deleteSel, duplicateSel, toggleLock, align, distribute, order,
+    deleteSel, duplicateSel, toggleLock, align, distribute, order, setGap, selectAll, fitIntoFrame,
     addPage, dupPage, delPage, movePage, goPage, openGrid: () => setGridOpen(true),
   };
 
@@ -502,7 +514,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
           faces={cropping ? faces : []} onPickFace={pickFace} onSnap={snapIntoFrame} focusId={cropping ? selFrame?.id : null}
         >
           <button className={'fab-small' + (multi ? ' on' : '')} aria-pressed={multi} aria-label="Select multiple items" onClick={() => { setMulti(!multi); if (multi) setSel(sel.slice(0, 1)); }}><Checklist /></button>
-          {multi && <div className="chip-hint">Tap items to select them</div>}
+          {multi && <div className="chip-hint">Tap items to select them <button onClick={selectAll}>Select all</button></div>}
           {!panel && !selIds.length && !page.images.length && !page.texts.length && page.frames.every((f) => !f.file) && (
             <div className="empty-card">
               <span>{page.frames.length ? 'Add a photo. It fills every frame.' : 'Start by adding your photos'}</span>

@@ -351,7 +351,10 @@ export default function PageCanvas(p: {
     },
     dragMove: (id, node) => {
       if (page.images.some((i) => i.id === id) && starts.current.size <= 1) {
-        const f = [...page.frames].reverse().find((q) => node.x() > q.x * S.w && node.x() < (q.x + q.w) * S.w && node.y() > q.y * S.h && node.y() < (q.y + q.h) * S.h);
+        // The frame under your finger wins (works even when the photo is much bigger than the frame); otherwise the frame under the photo's centre.
+        const inside = (q: Frame, x: number, y: number) => x > q.x * S.w && x < (q.x + q.w) * S.w && y > q.y * S.h && y < (q.y + q.h) * S.h;
+        const ptr = node.getStage()?.getRelativePointerPosition();
+        const f = (ptr && [...page.frames].reverse().find((q) => inside(q, ptr.x, ptr.y))) || [...page.frames].reverse().find((q) => inside(q, node.x(), node.y()));
         const nid = f ? f.id : null;
         if (nid !== hoverRef.current) { hoverRef.current = nid; setHover(nid); if (nid) navigator.vibrate?.(10); }
       }
