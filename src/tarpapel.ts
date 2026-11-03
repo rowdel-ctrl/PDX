@@ -120,7 +120,7 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
     // steps (measured first so the map can use the space that is left)
     const steps = overlap ? [
       'Print every page at 100% ("Actual size").',
-      'Cut along the dashed lines: the left and top of every sheet, plus the bottom of the last row and the right of the last column.',
+      'Cut along the dashed lines with scissors: the left and top of every sheet, plus the bottom of the last row and the right of the last column. The other lines only mark the edge of the picture.',
       'Go in number order. Glue the strip marked GLUE, lay the next sheet on top and line up the picture. Finish a row, then the next.',
     ] : [
       'Print every page at 100% ("Actual size").',
@@ -191,8 +191,11 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
         page.drawLine({ start: { x: X(x0), y: Y(y0) }, end: { x: X(x1), y: Y(y0) }, ...dash });
         scissors(page, SH, m / 2, y0 + offY, 90, k);
         scissors(page, SH, x0 + offX, m / 2, 0, k);
-        if (cutRight) page.drawLine({ start: { x: X(x1), y: Y(y0) }, end: { x: X(x1), y: Y(y1) }, ...dash });
-        if (cutBottom) page.drawLine({ start: { x: X(x0), y: Y(y1) }, end: { x: X(x1), y: Y(y1) }, ...dash });
+        // lines on all four sides; in overlap mode the right and bottom lines only mark the edge of the picture (they are not cut)
+        page.drawLine({ start: { x: X(x1), y: Y(y0) }, end: { x: X(x1), y: Y(y1) }, ...dash });
+        page.drawLine({ start: { x: X(x0), y: Y(y1) }, end: { x: X(x1), y: Y(y1) }, ...dash });
+        if (cutRight) scissors(page, SH, x1 + m / 2, y1 - offY, 270, k);
+        if (cutBottom) scissors(page, SH, x1 - offX, y1 + m / 2, 180, k);
       }
 
       if (m >= 4) page.drawText(`Sheet ${r * p.cols + c + 1} of ${p.count}  ·  Row ${r + 1}, Col ${c + 1}`, { x: X(m), y: X(1.6), size: 6, font, color: GRAY });
