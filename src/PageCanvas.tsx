@@ -33,6 +33,13 @@ function useVariant(file: string, rot: number, crop = FULL, maxPx = 1400) {
 /** Snap a node's bounding box to page centre/edges/margins and other items. Moves the node. */
 function snap(node: Konva.Node, others: B[], S: Size, m: number): Guides {
   const r = node.getClientRect({ skipStroke: true, skipShadow: true, relativeTo: node.getLayer() ?? undefined });
+  const g = snapRect({ x: r.x, y: r.y, w: r.width, h: r.height }, others, S, m);
+  node.x(node.x() + g.dx); node.y(node.y() + g.dy);
+  return g.guides;
+}
+
+/** Snap a rectangle (page px) to page edges/centre/margins and other items. Returns the shift to apply. */
+function snapRect(r: B, others: B[], S: Size, m: number): { dx: number; dy: number; guides: Guides } {
   const xs = [0, S.w / 2, S.w, m, S.w - m], ys = [0, S.h / 2, S.h, m, S.h - m];
   for (const o of others) { xs.push(o.x, o.x + o.w / 2, o.x + o.w); ys.push(o.y, o.y + o.h / 2, o.y + o.h); }
   const best = (edges: number[], cands: number[]) => {
@@ -40,11 +47,9 @@ function snap(node: Konva.Node, others: B[], S: Size, m: number): Guides {
     for (const e of edges) for (const c of cands) if (Math.abs(c - e) < Math.abs(d)) { d = c - e; at = c; }
     return Math.abs(d) <= SNAP_PX ? { d, at } : null;
   };
-  const sx = best([r.x, r.x + r.width / 2, r.x + r.width], xs);
-  const sy = best([r.y, r.y + r.height / 2, r.y + r.height], ys);
-  if (sx) node.x(node.x() + sx.d);
-  if (sy) node.y(node.y() + sy.d);
-  return { v: sx ? [sx.at] : [], h: sy ? [sy.at] : [] };
+  const sx = best([r.x, r.x + r.w / 2, r.x + r.w], xs);
+  const sy = best([r.y, r.y + r.h / 2, r.y + r.h], ys);
+  return { dx: sx ? sx.d : 0, dy: sy ? sy.d : 0, guides: { v: sx ? [sx.at] : [], h: sy ? [sy.at] : [] } };
 }
 
 interface Ctx {
@@ -379,6 +384,15 @@ export default function PageCanvas(p: {
       const o = starts.current.get(id)!;
       const dx = node.x() - o.x, dy = node.y() - o.y;
       for (const [sid, st] of starts.current) if (sid !== id) nodes.current.get(sid)?.position({ x: st.x + dx, y: st.y + dy });
+      // snap the whole group's outline to the page and to items that are not being moved
+      const rs = [...starts.current.keys()].map((sid) => nodes.current.get(sid)?.getClientRect({ skipStroke: true, skipShadow: true, relativeTo: node.getLayer() ?? undefined })).filter((q): q is NonNullable<typeof q> => !!q);
+      if (rs.length) {
+        const x0 = Math.min(...rs.map((q) => q.x)), y0 = Math.min(...rs.map((q) => q.y));
+        const x1 = Math.max(...rs.map((q) => q.x + q.width)), y1 = Math.max(...rs.map((q) => q.y + q.height));
+        const g = snapRect({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, boxes(new Set(starts.current.keys())), S, m);
+        if (g.dx || g.dy) for (const sid of starts.current.keys()) { const n = nodes.current.get(sid); if (n) n.position({ x: n.x() + g.dx, y: n.y() + g.dy }); }
+        haptic(g.guides); setGuides(g.guides);
+      }
       node.getLayer()?.batchDraw();
     },
     dragEnd: (id) => {
