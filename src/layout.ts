@@ -104,6 +104,16 @@ export function freeBox(page: Page, aspect: number, n: number): Box {
   return { ...b, x: Math.min(1 - b.w, b.x + off), y: Math.min(1 - b.h, b.y + off) };
 }
 
+/** Box for photo number `i` of `total` laid out in an even grid on the page (used when many photos share one page). */
+export function gridBox(page: Page, aspect: number, i: number, total: number): Box {
+  const { widthMm: W, heightMm: H } = page;
+  const m = Math.min(page.marginMm, Math.min(W, H) / 3), g = page.spacingMm;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(total * (W / H)))), rows = Math.ceil(total / cols);
+  const cw = (W - 2 * m - g * (cols - 1)) / cols, ch = (H - 2 * m - g * (rows - 1)) / rows;
+  const col = i % cols, row = Math.floor(i / cols);
+  return fit(aspect, { x: (m + col * (cw + g)) / W, y: (m + row * (ch + g)) / H, w: cw / W, h: ch / H }, W, H);
+}
+
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
 /** Which part of the photo a frame shows (in the rotated photo), from its zoom and centre. */

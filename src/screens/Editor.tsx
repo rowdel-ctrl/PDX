@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayItem } from '../types';
 import { listProjects, newPage, saveProject } from '../storage';
-import { applyLayout, cellCount, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
+import { applyLayout, cellCount, gridBox, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
 import { alignItems, distributeItems, findItem, gapItems, fillGrid, groupBox, mapSelected, reorder, scaleItems, selectWhere, setBoxMm, type SelectMode, type AlignMode, type AnyItem } from '../arrange';
 import { deleteImages, evenLight as evenLightFile, FULL, importImage, makeCutout, newId } from '../images';
 import RefineEdges from '../RefineEdges';
 import { faceFit, findFaces, mainFace, type Face } from '../vision';
 import { useBack } from '../back';
-import { askConfirm, kindOf, Toast, type ToastKind } from '../notify';
+import { askChoice, askConfirm, kindOf, Toast, type ToastKind } from '../notify';
 import PageCanvas, { type SelBox } from '../PageCanvas';
 import PagePill from '../PagePill';
 import CropCard from '../CropCard';
@@ -216,8 +216,9 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   };
 
   /** Put photos on the page: empty frames first, then loose on frame pages, or layout slots, then new pages. */
-  const placeItems = (items: TrayItem[]) => {
+  const placeItems = (items: TrayItem[], mode: 'flow' | 'one' | 'separate' = 'flow') => {
     const idx = pi;
+    if (mode === 'separate') { placeSeparate(items); return; }
     let extra = 0, placed = 0;
     const filled: { page: number; id: string }[] = [];
     edit((p) => {
@@ -237,12 +238,18 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         if (same) { queue.shift(); placed++; }
         const imgs = [...pg.images];
         const hasFrames = pg.frames.length > 0;
-        const cap = hasFrames ? 99 : cellCount(pg.layout);
+        let layoutNow = pg.layout;
+        if (mode === 'one' && !hasFrames) {
+          const need = imgs.length + queue.length;
+          layoutNow = need <= 1 ? '1' : need <= 2 ? '2x1' : need <= 4 ? '2x2' : need <= 6 ? '2x3' : need <= 9 ? '3x3' : 'free';
+        }
+        const total = imgs.length + queue.length;
+        const cap = mode === 'one' ? 9999 : hasFrames ? 99 : cellCount(pg.layout);
         while (queue.length && imgs.length < cap) {
           const it = queue.shift()!; placed++;
-          imgs.push({ id: newId(), file: it.file, aspect: it.aspect, rot: 0, crop: FULL, ...(pg.layout === 'free' || hasFrames ? freeBox(pg, it.aspect, imgs.length) : { x: 0, y: 0, w: 0.5, h: 0.5 }) });
+          imgs.push({ id: newId(), file: it.file, aspect: it.aspect, rot: 0, crop: FULL, ...(mode === 'one' && layoutNow === 'free' && !hasFrames ? gridBox(pg, it.aspect, imgs.length, total) : pg.layout === 'free' || hasFrames ? freeBox(pg, it.aspect, imgs.length) : { x: 0, y: 0, w: 0.5, h: 0.5 }) });
         }
-        const layout: LayoutId = hasFrames && imgs.length > pg.images.length ? 'free' : pg.layout;
+        const layout: LayoutId = hasFrames && imgs.length > pg.images.length ? 'free' : layoutNow;
         const { fill: _drop, ...rest } = pg; void _drop;
         pages[k] = applyLayout({ ...rest, layout, frames, images: imgs });
         if (queue.length) { pages.splice(k + 1, 0, { ...pg, id: newId(), images: [], texts: [], frames: [], fill: undefined }); extra++; k++; }
@@ -252,12 +259,43 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     say(`Added ${placed}${extra ? ` (${extra} new ${extra === 1 ? 'page' : 'pages'})` : ''}`);
     if (autoFace) for (const f of filled) centerFace(f.id, true, f.page);
   };
+  /** Each photo gets its own page (a sheet with frames gets the photo in every frame). */
+  const placeSeparate = (items: TrayItem[]) => {
+    const idx = pi;
+    edit((p) => {
+      const base = p.pages[idx];
+      const hasFrames = base.frames.length > 0;
+      const blank = (pg: Page): Page => ({ ...pg, id: newId(), images: [], texts: [], fill: undefined, frames: pg.frames.map((f) => ({ ...f, id: newId(), file: '', zoom: 1, cx: 0.5, cy: 0.5, rot: 0, bg: undefined })) });
+      const fillPage1 = (pg: Page, it: TrayItem): Page => (hasFrames
+        ? { ...pg, frames: pg.frames.map((f) => ({ ...f, file: it.file, aspect: it.aspect, rot: 0, zoom: 1, cx: 0.5, cy: 0.5 })) }
+        : applyLayout({ ...pg, layout: '1', images: [{ id: newId(), file: it.file, aspect: it.aspect, rot: 0, crop: FULL, x: 0, y: 0, w: 1, h: 1 }] }));
+      const empty = base.images.length === 0 && base.frames.every((f) => !f.file);
+      const pages = [...p.pages], made: Page[] = [];
+      items.forEach((it, j) => {
+        if (j === 0 && empty) pages[idx] = fillPage1(base, it);
+        else made.push(fillPage1(blank(base), it));
+      });
+      pages.splice(idx + 1, 0, ...made);
+      return { ...p, pages };
+    });
+    say(`Added ${items.length} ${items.length === 1 ? 'photo' : 'photos'}, one per page`);
+  };
   const addPhotos = async (files: FileList | File[] | null) => {
     if (!files || !files.length) return;
     say('Adding photos…');
     const items = await addToLibrary(files);
     if (!items.length) { say('Could not read that photo'); return; }
-    placeItems(items);
+    if (items.length < 2) { placeItems(items); return; }
+    const framed = page.frames.length > 0;
+    const choice = await askChoice<'one' | 'separate' | 'flow'>({
+      title: `Add ${items.length} photos`,
+      body: 'Where should they go?',
+      options: framed
+        ? [{ value: 'flow', label: 'Fill the frames on this page', hint: 'Extra photos go onto new pages' }, { value: 'separate', label: 'One photo per page', hint: 'Each sheet repeats its photo in every frame' }]
+        : [{ value: 'one', label: 'All on this page', hint: 'Arranged in a neat grid' }, { value: 'separate', label: 'Each on its own page', hint: `Makes ${items.length} pages` }],
+    });
+    if (!choice) { say(`${items.length} photos are in Your photos. Tap one to add it.`); return; }
+    placeItems(items, choice);
   };
   const addFromLibrary = (t: TrayItem) => {
     if (selFrame && !selFrame.file) { placePhoto(selFrame.id, t); return; }

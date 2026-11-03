@@ -58,3 +58,38 @@ export function ConfirmHost() {
     </div>
   );
 }
+
+// ---------------------------------------------------------------- choice dialog
+interface Pick<T extends string> { title: string; body?: string; options: { value: T; label: string; hint?: string }[]; resolve: (v: T | null) => void }
+let pushPick: ((a: Pick<string>) => void) | null = null;
+
+/** Ask the person to choose one of a few options. Resolves with the value, or null if they cancel. */
+export function askChoice<T extends string>(o: { title: string; body?: string; options: { value: T; label: string; hint?: string }[] }): Promise<T | null> {
+  return new Promise((resolve) => {
+    if (!pushPick) { resolve(o.options[0]?.value ?? null); return; }
+    pushPick({ ...o, resolve: resolve as (v: string | null) => void });
+  });
+}
+
+export function ChoiceHost() {
+  const [a, setA] = useState<Pick<string> | null>(null);
+  useEffect(() => { pushPick = setA; return () => { pushPick = null; }; }, []);
+  if (!a) return null;
+  const done = (v: string | null) => { a.resolve(v); setA(null); };
+  return (
+    <div className="dlg-back" onClick={() => done(null)}>
+      <div className="dlg" role="dialog" aria-label={a.title} onClick={(e) => e.stopPropagation()}>
+        <b>{a.title}</b>
+        {a.body && <p className="muted">{a.body}</p>}
+        <div className="dlg-choices">
+          {a.options.map((o, i) => (
+            <button key={o.value} className={'choice' + (i === 0 ? ' first' : '')} onClick={() => done(o.value)}>
+              <span>{o.label}</span>{o.hint && <small>{o.hint}</small>}
+            </button>
+          ))}
+        </div>
+        <button className="btn" onClick={() => done(null)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
