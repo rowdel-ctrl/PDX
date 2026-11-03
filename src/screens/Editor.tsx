@@ -525,7 +525,16 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
           <button className={'fab-small' + (multi ? ' on' : '')} aria-pressed={multi} aria-label="Select multiple items" onClick={() => { setMulti(!multi); if (multi) setSel(sel.slice(0, 1)); }}><Checklist /></button>
           <button className={'fab-small second' + (hand ? ' on' : '')} aria-pressed={hand} aria-label="Hand tool: move the view with one finger" onClick={() => setHand(!hand)}><Hand /></button>
           {hand && <div className="chip-hint" style={{ top: 58 }}>Hand tool: drag to move the view. Pinch to zoom.</div>}
-          {multi && <div className="chip-hint">Tap items to select them <button onClick={selectAll}>Select all</button></div>}
+          {(multi || selIds.length > 1) && (() => {
+            const total = page.images.length + page.frames.length + page.texts.length;
+            return (
+              <div className="chip-hint">
+                {selIds.length ? <b>{selIds.length} of {total} selected</b> : 'Tap items to select them'}
+                {selIds.length < total && <button onClick={selectAll}>Select all</button>}
+                {selIds.length > 0 && <button onClick={() => setSel([])}>Clear</button>}
+              </div>
+            );
+          })()}
           {!panel && !selIds.length && !page.images.length && !page.texts.length && page.frames.every((f) => !f.file) && (
             <div className="empty-card">
               <span>{page.frames.length ? 'Add a photo. It fills every frame.' : 'Start by adding your photos'}</span>
