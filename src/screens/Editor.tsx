@@ -16,7 +16,7 @@ import { AddPanel, ItemPanel, LayoutPanel, PagePanel, TextPanel } from '../panel
 import { EdCtx, type AddTab, type Ed, type PanelId } from '../editorContext';
 import type { Template } from '../templates';
 import { presetOf } from '../units';
-import { Back, Checklist, Close, Grid, Plus, Redo, Share, Tune, Type, Undo, Image as ImageIcon } from '../icons';
+import { Back, Checklist, Close, Hand, Grid, Plus, Redo, Share, Tune, Type, Undo, Image as ImageIcon } from '../icons';
 
 export type Tab = PanelId;
 const NAV: [PanelId, string, () => React.ReactElement][] = [
@@ -46,6 +46,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   const [pi, setPi] = useState(0);
   const [sel, setSel] = useState<string[]>([]);
   const [multi, setMulti] = useState(false);
+  const [hand, setHand] = useState(false);
   const [panel, setPanel] = useState<PanelId | null>(initialTab === 'layout' ? 'layout' : initialTab === 'frames' ? 'add' : null);
   const [addTab, setAddTab] = useState<AddTab>('photos');
   const [exporting, setExporting] = useState(false);
@@ -508,12 +509,14 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
           page={page} pageNo={pi + 1} pageNumbers={proj.pageNumbers} unit={unit} selectedIds={selIds}
           onPick={onPick} onBlank={() => { setSel([]); setAdjust(false); }} onMoveMany={moveMany}
           onChange={updateImage} onChangeText={updateText} onChangeFrame={(fid, patch) => updateFrame(fid, patch)} onSwap={swap}
-          adjust={adjust} dropTarget={over} border={proj.frameBorder} cropMarks={proj.cropMarks} hitRef={hit}
+          hand={hand} adjust={adjust} dropTarget={over} border={proj.frameBorder} cropMarks={proj.cropMarks} hitRef={hit}
           onSelBox={setSelBox} onDragging={setDragging}
           padB={showTools || cropping ? 14 : 112} reserve={cropping ? '208px' : showTools ? 'calc(92px + var(--sheet-h))' : '0px'}
           faces={cropping ? faces : []} onPickFace={pickFace} onSnap={snapIntoFrame} focusId={cropping ? selFrame?.id : null}
         >
           <button className={'fab-small' + (multi ? ' on' : '')} aria-pressed={multi} aria-label="Select multiple items" onClick={() => { setMulti(!multi); if (multi) setSel(sel.slice(0, 1)); }}><Checklist /></button>
+          <button className={'fab-small second' + (hand ? ' on' : '')} aria-pressed={hand} aria-label="Hand tool: move the view with one finger" onClick={() => setHand(!hand)}><Hand /></button>
+          {hand && <div className="chip-hint" style={{ top: 58 }}>Hand tool: drag to move the view. Pinch to zoom.</div>}
           {multi && <div className="chip-hint">Tap items to select them <button onClick={selectAll}>Select all</button></div>}
           {!panel && !selIds.length && !page.images.length && !page.texts.length && page.frames.every((f) => !f.file) && (
             <div className="empty-card">

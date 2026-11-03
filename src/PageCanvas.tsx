@@ -57,7 +57,7 @@ interface Ctx {
   dragEnd: (id: string) => void;
   setHud: (s: string) => void;
   setGuides: (g: Guides) => void;
-  faces: Face[]; onPickFace: (i: number) => void;
+  faces: Face[]; onPickFace: (i: number) => void; hand: boolean;
   hovered: () => string | null;
 }
 
@@ -77,7 +77,7 @@ function ImageItem({ im, c, onChange, onSwap }: {
       ref={(n) => { node.current = n; regFn(n); }} image={img ?? undefined}
       x={(im.x + im.w / 2) * S.w} y={(im.y + im.h / 2) * S.h} width={im.w * S.w} height={im.h * S.h}
       offsetX={(im.w * S.w) / 2} offsetY={(im.h * S.h) / 2} rotation={im.angle ?? 0} fill={img ? im.bg : '#C9D3FF'}
-      draggable={!im.locked} onClick={() => c.pick(im.id, 'tap')} onTap={() => c.pick(im.id, 'tap')}
+      draggable={!im.locked && !c.hand} onClick={() => c.pick(im.id, 'tap')} onTap={() => c.pick(im.id, 'tap')}
       onDragStart={(e) => { start.current = { x: e.target.x(), y: e.target.y() }; c.dragStart(im.id); }}
       onDragMove={(e) => { c.dragMove(im.id, e.target); hud(e.target); }}
       onDragEnd={(e) => {
@@ -126,7 +126,7 @@ function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial
     <Group
       ref={(n) => { node.current = n; regFn(n); }}
       x={f.x * S.w + fw / 2} y={f.y * S.h + fh / 2} offsetX={fw / 2} offsetY={fh / 2} width={fw} height={fh}
-      draggable={!adjusting && !f.locked} onClick={() => c.pick(f.id, 'tap')} onTap={() => c.pick(f.id, 'tap')}
+      draggable={!adjusting && !f.locked && !c.hand} onClick={() => c.pick(f.id, 'tap')} onTap={() => c.pick(f.id, 'tap')}
       onDragStart={() => c.dragStart(f.id)}
       onDragMove={(e) => { c.dragMove(f.id, e.target); c.setHud(`${fmt(f.w * page.widthMm, unit)} × ${fmt(f.h * page.heightMm, unit)} ${unit}`); }}
       onDragEnd={() => c.dragEnd(f.id)}
@@ -196,7 +196,7 @@ function TextItem({ t, c, onChange }: { t: PageText; c: Ctx; onChange: (p: Parti
     <KText
       ref={(n) => { node.current = n; regFn(n); }} text={t.text || ' '} x={t.x * S.w} y={t.y * S.h} rotation={t.angle ?? 0}
       fontSize={t.sizePt * PT_MM * kz} lineHeight={1} fontFamily="Helvetica, Arial, sans-serif" fontStyle={t.bold ? 'bold' : 'normal'} fill={t.color} wrap="none"
-      draggable={!t.locked} onClick={() => c.pick(t.id, 'tap')} onTap={() => c.pick(t.id, 'tap')}
+      draggable={!t.locked && !c.hand} onClick={() => c.pick(t.id, 'tap')} onTap={() => c.pick(t.id, 'tap')}
       onDragStart={() => c.dragStart(t.id)}
       onDragMove={(e) => { c.dragMove(t.id, e.target); c.setHud(`x ${fmt(e.target.x() * mmW, unit)}  y ${fmt(e.target.y() * mmH, unit)} ${unit}`); }}
       onDragEnd={() => c.dragEnd(t.id)}
@@ -221,7 +221,7 @@ export default function PageCanvas(p: {
   adjust: boolean; dropTarget: string | null; border: FrameBorder; cropMarks: boolean;
   hitRef: React.MutableRefObject<((x: number, y: number) => string | null) | null>;
   onSelBox: (b: SelBox | null) => void; onDragging: (d: boolean) => void;
-  padB?: number; reserve?: string; focusId?: string | null; faces: Face[]; onPickFace: (i: number) => void; onSnap: (imgId: string, frameId: string) => void;
+  hand?: boolean; padB?: number; reserve?: string; focusId?: string | null; faces: Face[]; onPickFace: (i: number) => void; onSnap: (imgId: string, frameId: string) => void;
   children?: React.ReactNode;
 }) {
   const { page, selectedIds } = p;
@@ -243,7 +243,10 @@ export default function PageCanvas(p: {
   const lastBox = useRef('');
   const [hover, setHover] = useState<string | null>(null);
   const hoverRef = useRef<string | null>(null);
-  const pan1 = useRef<{ x: number; y: number } | null>(null);   // one-finger pan that started on empty page
+  const pan1 = useRef<{ x: number; y: number } | null>(null);
+  const handRef = useRef(false); handRef.current = !!p.hand;
+  // Hand tool adds some room around the page so it can be moved even when it fits on screen.
+  useLayoutEffect(() => { const el = desk.current; if (el) { el.scrollLeft = p.hand ? 120 : 0; el.scrollTop = p.hand ? 160 : 0; } }, [p.hand]);   // one-finger pan that started on empty page
 
   useEffect(() => {
     const el = desk.current!;
@@ -292,6 +295,7 @@ export default function PageCanvas(p: {
       return { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), x: (a.clientX + b.clientX) / 2 - r.left, y: (a.clientY + b.clientY) / 2 - r.top };
     };
     const start = (e: TouchEvent) => {
+      if (e.touches.length === 1 && handRef.current) { pan1.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; return; }   // Hand tool: one finger moves the view
       if (e.touches.length !== 2) return;
       (Konva as unknown as { DD?: { node?: Konva.Node } }).DD?.node?.stopDrag();
       const i = info(e); d0 = i.d; z0 = zoomRef.current; mid0 = { x: i.x, y: i.y };
@@ -347,7 +351,7 @@ export default function PageCanvas(p: {
 
   const ctx: Ctx = {
     S, kz, m, unit: p.unit, page, selected, adjust: p.adjust, dropTarget: p.dropTarget ?? hover, border: p.border, cropMarks: p.cropMarks,
-    reg, setHud, setGuides, faces: p.faces, onPickFace: p.onPickFace, hovered: () => hoverRef.current,
+    reg, setHud, setGuides, faces: p.faces, onPickFace: p.onPickFace, hand: !!p.hand, hovered: () => hoverRef.current,
     pick: p.onPick,
     dragStart: (id) => {
       p.onPick(id, 'drag');
@@ -438,7 +442,7 @@ export default function PageCanvas(p: {
   return (
     <div className="deskwrap" ref={wrap} style={{ marginBottom: p.reserve }}>
       <div className={'desk' + (zoom > 1 ? ' zoomed' : '')} ref={desk}>
-        <div style={{ margin: 'auto', padding: `${padT}px ${padX}px ${padB}px` }}>
+        <div style={{ margin: 'auto', padding: `${padT + (p.hand ? 160 : 0)}px ${padX + (p.hand ? 120 : 0)}px ${padB + (p.hand ? 160 : 0)}px` }}>
           <div style={{ width: S.w, height: S.h, boxShadow: '0 2px 14px rgba(0,0,0,.25)' }}>
             <Stage ref={stageRef} width={S.w} height={S.h}>
               <Layer>
