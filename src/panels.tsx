@@ -250,6 +250,18 @@ export function TextPanel() {
 
 // ---------------------------------------------------------------- Page (size, color, guides)
 
+/** Thickness in mm: a slider for quick changes and a box to type any value. */
+function ThickRow({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
+  return (
+    <label className="slider thick"><span>{label}</span>
+      <input type="range" aria-label={label} min={min} max={max} step={0.1} value={Math.min(max, value)} onChange={(e) => onChange(Number(e.target.value))} />
+      <input className="num" type="number" inputMode="decimal" aria-label={`${label} in mm`} step={0.1} min={0.05} max={20} value={Number(value.toFixed(2))}
+        onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) onChange(Math.min(20, Math.max(0.05, v))); }} />
+      <span className="muted">mm</span>
+    </label>
+  );
+}
+
 export function PagePanel() {
   const ed = useEd();
   const { page, unit, proj } = ed;
@@ -301,23 +313,25 @@ export function PagePanel() {
       <Swatches label="Page color" value={page.background} onChange={(c) => ed.editPage((pg) => ({ ...pg, background: c }))} />
       <Switch label="Page numbers" checked={proj.pageNumbers} onChange={(b) => ed.edit((p) => ({ ...p, pageNumbers: b }))} />
       <Switch label="Cutting lines around photos" hint="Thin line to cut along" checked={fb.on} onChange={(b) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, on: b } }))} />
+      {fb.on && (
+        <>
+          <ThickRow label="Line thickness" value={fb.widthMm} min={0.1} max={5} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, widthMm: v } }))} />
+          <Swatches label="Cutting line color" value={fb.color} onChange={(c) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, color: c } }))} />
+        </>
+      )}
+      <Switch label="Border around the page" checked={page.border.on} onChange={(b) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, on: b } }))} />
+      {page.border.on && (
+        <>
+          <ThickRow label="Border thickness" value={page.border.widthMm} min={0.5} max={10} onChange={(v) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, widthMm: v } }))} />
+          <Swatches label="Border color" value={page.border.color} onChange={(c) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, color: c } }))} />
+        </>
+      )}
       <More>
-        <Switch label="Border around the page" checked={page.border.on} onChange={(b) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, on: b } }))} />
-        {page.border.on && (
-          <>
-            <SliderRow label="Width" value={page.border.widthMm} min={0.5} max={10} step={0.5} suffix={`${page.border.widthMm} mm`} onChange={(v) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, widthMm: v } }))} />
-            <Swatches label="Border color" value={page.border.color} onChange={(c) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, color: c } }))} />
-          </>
-        )}
         {fb.on && (
-          <>
-            <SliderRow label="Line" value={fb.widthMm} min={0.1} max={2} step={0.1} suffix={`${fb.widthMm.toFixed(1)} mm`} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, widthMm: v } }))} />
-            <Swatches label="Cutting line color" value={fb.color} onChange={(c) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, color: c } }))} />
-            <div className="field">Cutting line sits
-              <Segmented value={fb.place} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, place: v } }))} options={[['outside', 'Outside the photo'], ['inside', 'Inside']]} />
-              <span className="muted small">{fb.place === 'outside' ? 'Keeps the photo full size. Cut just inside the line.' : 'Draws over the photo edge. Cut along the outer edge.'}</span>
-            </div>
-          </>
+          <div className="field">Cutting line sits
+            <Segmented value={fb.place} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, place: v } }))} options={[['outside', 'Outside the photo'], ['inside', 'Inside']]} />
+            <span className="muted small">{fb.place === 'outside' ? 'Keeps the photo full size. Cut just inside the line.' : 'Draws over the photo edge. Cut along the outer edge.'}</span>
+          </div>
         )}
         <Switch label="Corner marks" hint={proj.cropMarks && page.spacingMm < 4 ? 'Needs about 4 mm gap between photos' : 'Small marks at each photo corner'} checked={proj.cropMarks} onChange={(b) => ed.edit((p) => ({ ...p, cropMarks: b }))} />
         <button className="btn tonal" onClick={ed.openGrid}>Show all pages</button>
