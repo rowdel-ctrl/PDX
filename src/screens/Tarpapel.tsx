@@ -208,7 +208,7 @@ export default function Tarpapel({ onBack }: { onBack: () => void }) {
               </div>
               {overlap && <SliderRow label="Overlap" value={s.overlap} min={3} max={30} suffix={`${s.overlap} mm`} onChange={(v) => set({ overlap: v })} />}
               <SliderRow label="Printer border" value={s.margin} min={0} max={15} suffix={`${s.margin} mm`} onChange={(v) => set({ margin: v })} />
-              <span className="muted small">Printer border is the strip your printer can't print on. 5 mm suits most home printers. Print at "Actual size", not "Fit to page".</span>
+              <span className="muted small">Printer border is the strip your printer can't print on. 5 mm suits most home printers. Print at "Actual size", not "Fit to page".{s.cutLines && s.margin < 6 ? ' Cut guides sit in this border, so it is at least 6 mm.' : ''}</span>
             </section>
 
             <section className="tp-card">

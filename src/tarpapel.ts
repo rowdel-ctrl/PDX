@@ -28,6 +28,9 @@ export interface TpPlan {
 }
 
 export const MAX_SHEETS = 200;
+/** Cut guides live in the printer border (it gets trimmed off), so it must be wide enough for them. */
+export const GUIDE_MARGIN = 6;
+const eff = (s: TpSettings): TpSettings => (s.cutLines ? { ...s, margin: Math.max(s.margin, GUIDE_MARGIN) } : s);
 
 function planFor(aspect: number, s: TpSettings, landscape: boolean): TpPlan {
   const sheetW = landscape ? s.paperH : s.paperW, sheetH = landscape ? s.paperW : s.paperH;
@@ -55,7 +58,8 @@ function planFor(aspect: number, s: TpSettings, landscape: boolean): TpPlan {
 }
 
 /** Work out the sheet grid. "auto" picks whichever paper orientation needs fewer sheets. */
-export function plan(aspect: number, s: TpSettings): TpPlan {
+export function plan(aspect: number, s0: TpSettings): TpPlan {
+  const s = eff(s0);
   if (s.orient === 'portrait') return planFor(aspect, s, false);
   if (s.orient === 'landscape') return planFor(aspect, s, true);
   const p = planFor(aspect, s, false), l = planFor(aspect, s, true);
@@ -71,14 +75,14 @@ export const pageCount = (p: TpPlan, s: TpSettings) => p.count + (s.guidePage ? 
 const RED = rgb(0.9, 0.28, 0.31), VIOLET = rgb(0.486, 0.361, 1), GRAY = rgb(0.35, 0.35, 0.35), WHITE = rgb(1, 1, 1), INK = rgb(0.1, 0.1, 0.14);
 
 /** Lucide-style scissors, centred on (xmm, ymm), blades pointing along `angle` (degrees, clockwise, 0 = right). */
-function scissors(page: PDFPage, SH: number, xmm: number, ymm: number, angle: number) {
-  const k = 0.3, a = (angle * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a);
+function scissors(page: PDFPage, SH: number, xmm: number, ymm: number, angle: number, k: number) {
+  const a = (angle * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a);
   const T = (px: number, py: number) => {
     const dx = (px - 12) * k, dy = (py - 12) * k;
     return { x: mmToPt(xmm + dx * cs - dy * sn), y: SH - mmToPt(ymm + dx * sn + dy * cs) };
   };
   const segs: [number, number, number, number][] = [[8.12, 8.12, 12, 12], [20, 4, 8.12, 15.88], [14.8, 14.8, 20, 20]];
-  for (const [color, thickness] of [[WHITE, 3.4], [RED, 1.3]] as const) {
+  for (const [color, thickness] of [[WHITE, 2.4], [RED, 1.1]] as const) {
     for (const [x1, y1, x2, y2] of segs) page.drawLine({ start: T(x1, y1), end: T(x2, y2), thickness, color, lineCap: 1 });
     for (const [cx, cy] of [[6, 6], [6, 18]]) { const c = T(cx, cy); page.drawCircle({ x: c.x, y: c.y, size: mmToPt(3 * k), borderColor: color, borderWidth: thickness }); }
   }
@@ -94,8 +98,9 @@ function wrap(text: string, font: PDFFont, size: number, maxW: number): string[]
   return out;
 }
 
-export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s: TpSettings, name: string): Promise<Uint8Array> {
-  const p = plan(aspect, s);
+export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpSettings, name: string): Promise<Uint8Array> {
+  const s = eff(s0);
+  const p = plan(aspect, s0);
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -201,24 +206,21 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s: TpSe
         const dash = { thickness: 1, color: RED, dashArray: [5, 3] };
         const x0 = m, x1 = m + p.cw, y0 = m, y1 = m + p.ch;
         const offX = Math.min(14, p.cw / 4), offY = Math.min(14, p.ch / 4);
+        const k = Math.min(0.3, Math.max(0.12, (m - 1) / 24));   // scissors fit in the border
         page.drawLine({ start: { x: X(x0), y: Y(y0) }, end: { x: X(x0), y: Y(y1) }, ...dash });
         page.drawLine({ start: { x: X(x0), y: Y(y0) }, end: { x: X(x1), y: Y(y0) }, ...dash });
-        scissors(page, SH, x0, y0 + offY, 90);
-        scissors(page, SH, x0 + offX, y0, 0);
-        if (cutRight) { page.drawLine({ start: { x: X(x1), y: Y(y0) }, end: { x: X(x1), y: Y(y1) }, ...dash }); scissors(page, SH, x1, y1 - offY, 270); }
-        if (cutBottom) { page.drawLine({ start: { x: X(x0), y: Y(y1) }, end: { x: X(x1), y: Y(y1) }, ...dash }); scissors(page, SH, x1 - offX, y1, 180); }
+        scissors(page, SH, m / 2, y0 + offY, 90, k);
+        scissors(page, SH, x0 + offX, m / 2, 0, k);
+        if (cutRight) { page.drawLine({ start: { x: X(x1), y: Y(y0) }, end: { x: X(x1), y: Y(y1) }, ...dash }); scissors(page, SH, x1 + m / 2, y1 - offY, 270, k); }
+        if (cutBottom) { page.drawLine({ start: { x: X(x0), y: Y(y1) }, end: { x: X(x1), y: Y(y1) }, ...dash }); scissors(page, SH, x1 - offX, y1 + m / 2, 180, k); }
 
-        // which sheet goes where
-        const tag = (t: string, xmm: number, ymm: number, align: 'center' | 'left' | 'right') => {
-          const w = font.widthOfTextAtSize(t, 7) + 6, px = align === 'center' ? X(xmm) - w / 2 : align === 'left' ? X(xmm) : X(xmm) - w;
-          page.drawRectangle({ x: px, y: Y(ymm) - 5, width: w, height: 11, color: WHITE, opacity: 0.88 });
-          page.drawText(t, { x: px + 3, y: Y(ymm) - 2.2, size: 7, font, color: INK });
-        };
+        // which sheet goes where: small text in the border, so it never lands on the picture
         const n = (rr: number, cc: number) => rr * p.cols + cc + 1;
-        if (r > 0) tag(`Above: sheet ${n(r - 1, c)}`, m + p.cw / 2, m + 7, 'center');
-        if (r < p.rows - 1) tag(`Below: sheet ${n(r + 1, c)}`, m + p.cw / 2, m + p.ch - 7 - (overlap ? o : 0), 'center');
-        if (c > 0) tag(`Left: sheet ${n(r, c - 1)}`, m + 6, m + p.ch / 2, 'left');
-        if (c < p.cols - 1) tag(`Right: sheet ${n(r, c + 1)}`, m + p.cw - 6 - (overlap ? o : 0), m + p.ch / 2, 'right');
+        const sz = 5.5;
+        if (r > 0) { const t = `Above: sheet ${n(r - 1, c)}`; page.drawText(t, { x: X(m + p.cw / 2) - font.widthOfTextAtSize(t, sz) / 2, y: Y(m / 2) - sz * 0.35, size: sz, font, color: INK }); }
+        if (c > 0) { const t = `Left: sheet ${n(r, c - 1)}`; page.drawText(t, { x: X(m / 2) + sz * 0.35, y: Y(m + p.ch / 2) - font.widthOfTextAtSize(t, sz) / 2, size: sz, font, color: INK, rotate: degrees(90) }); }
+        if (c < p.cols - 1) { const t = `Right: sheet ${n(r, c + 1)}`; page.drawText(t, { x: X(m + p.cw + m / 2) + sz * 0.35, y: Y(m + p.ch / 2) - font.widthOfTextAtSize(t, sz) / 2, size: sz, font, color: INK, rotate: degrees(90) }); }
+        if (r < p.rows - 1) { const t = `Below: sheet ${n(r + 1, c)}`; page.drawText(t, { x: X(m + p.cw) - font.widthOfTextAtSize(t, sz), y: Y(m + p.ch + m / 2) - sz * 0.35, size: sz, font, color: INK }); }
       }
 
       // corner marks in the unprintable border
