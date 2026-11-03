@@ -3,7 +3,9 @@ import { mmToPt } from './units';
 
 const KEY = 'pdx.printscale';
 /** Print correction as a ratio (1 = off). 1.015 enlarges everything 1.5% for printers that print small. */
-export const getScale = (): number => { try { const v = parseFloat(localStorage.getItem(KEY) || '1'); return Number.isFinite(v) && v > 0.9 && v < 1.1 ? v : 1; } catch { return 1; } };
+/** Turned on while making picture files, which are not printed through a printer correction. */
+export const scaleOff = { on: false };
+export const getScale = (): number => { if (scaleOff.on) return 1; try { const v = parseFloat(localStorage.getItem(KEY) || '1'); return Number.isFinite(v) && v > 0.9 && v < 1.1 ? v : 1; } catch { return 1; } };
 export const setScale = (v: number) => { try { if (Math.abs(v - 1) < 0.0005) localStorage.removeItem(KEY); else localStorage.setItem(KEY, String(v)); } catch { /* full */ } };
 
 /** Add a page that is drawn with the saved print correction (scaled about the page centre). */

@@ -1,6 +1,6 @@
 name: Build APK
 on:
-  push:
+  # Builds only run when asked for (Actions tab, Run workflow), not on every push.
   workflow_dispatch:
 
 permissions:

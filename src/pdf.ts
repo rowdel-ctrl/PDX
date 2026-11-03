@@ -3,7 +3,7 @@ import type { Project, Quality } from './types';
 import { exportImage } from './images';
 import { borderRect, cropMarkSegments, frameCrop } from './layout';
 import { mmToPt } from './units';
-import { addScaledPage, closeScaled } from './printer';
+import { addScaledPage, closeScaled, scaleOff } from './printer';
 
 const hex = (c: string) => {
   const n = parseInt(c.replace('#', ''), 16);
@@ -16,7 +16,12 @@ const clean = (font: PDFFont, t: string) => {
   return Array.from(t).map((ch) => (ok.has(ch.codePointAt(0)!) ? ch : '?')).join('');
 };
 
-export async function buildPdf(p: Project, quality: Quality, onProgress?: (n: number, total: number) => void): Promise<Uint8Array> {
+export async function buildPdf(p: Project, quality: Quality, onProgress?: (n: number, total: number) => void, opts?: { noScale?: boolean }): Promise<Uint8Array> {
+  scaleOff.on = !!opts?.noScale;
+  try { return await build(p, quality, onProgress); } finally { scaleOff.on = false; }
+}
+
+async function build(p: Project, quality: Quality, onProgress?: (n: number, total: number) => void): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);

@@ -32,3 +32,23 @@ export async function sharePdf(bytes: Uint8Array, name: string): Promise<void> {
   const r = await Filesystem.writeFile({ path: file, data: b64(bytes), directory: Directory.Cache });
   await Share.share({ title: file, files: [r.uri], dialogTitle: 'Share PDF' });
 }
+
+export interface OutFile { bytes: Uint8Array; name: string; mime: string }
+
+/** Save several files (for example one picture per page) into Documents/PDX. */
+export async function saveFiles(files: OutFile[]): Promise<string> {
+  if (!Capacitor.isNativePlatform()) {
+    files.forEach((f, i) => setTimeout(() => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([f.bytes as BlobPart], { type: f.mime })); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }, i * 250));
+    return `Downloaded ${files.length} ${files.length === 1 ? 'file' : 'files'}`;
+  }
+  for (const f of files) await Filesystem.writeFile({ path: `PDX/${f.name}`, data: b64(f.bytes), directory: Directory.Documents, recursive: true });
+  return `Saved ${files.length} ${files.length === 1 ? 'file' : 'files'} to Documents/PDX`;
+}
+
+/** Open the phone's share sheet with several files. Apps such as Drive, Dropbox, WhatsApp and Email show up there when installed. */
+export async function shareFiles(files: OutFile[]): Promise<void> {
+  if (!Capacitor.isNativePlatform()) { await saveFiles(files); return; }
+  const uris: string[] = [];
+  for (const f of files) uris.push((await Filesystem.writeFile({ path: f.name, data: b64(f.bytes), directory: Directory.Cache })).uri);
+  await Share.share({ title: files[0]?.name, files: uris, dialogTitle: 'Share' });
+}

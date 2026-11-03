@@ -61,3 +61,32 @@ export async function openPdf(file: Blob) {
     destroy: () => doc.destroy(),
   };
 }
+
+
+/** Draw every page of a PDF as a picture file (PNG or JPG) at the given dots per inch. */
+export async function pdfToImages(pdf: Uint8Array, dpi: number, type: 'png' | 'jpg', onProgress?: (n: number, total: number) => void): Promise<Uint8Array[]> {
+  const lib = await pdfjs();
+  const doc = await lib.getDocument({ data: pdf.slice() }).promise;
+  const out: Uint8Array[] = [];
+  try {
+    for (let n = 1; n <= doc.numPages; n++) {
+      onProgress?.(n - 1, doc.numPages);
+      const page = await doc.getPage(n);
+      const v1 = page.getViewport({ scale: 1 });
+      const k = Math.min(dpi / 72, 8000 / Math.max(v1.width, v1.height));
+      const vp = page.getViewport({ scale: k });
+      const c = document.createElement('canvas');
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const ctx = c.getContext('2d')!;
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      const bin = atob(c.toDataURL(type === 'png' ? 'image/png' : 'image/jpeg', 0.92).split(',')[1]);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      out.push(bytes);
+      c.width = c.height = 0;
+    }
+  } finally { doc.destroy(); }
+  onProgress?.(doc.numPages, doc.numPages);
+  return out;
+}
