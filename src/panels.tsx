@@ -343,9 +343,9 @@ export function TextPanel() {
 function ThickRow({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
   return (
     <label className="slider thick"><span>{label}</span>
-      <input type="range" aria-label={label} min={min} max={max} step={0.1} value={Math.min(max, value)} onChange={(e) => onChange(Number(e.target.value))} />
-      <input className="num" type="number" inputMode="decimal" aria-label={`${label} in mm`} step={0.1} min={0.05} max={20} value={Number(value.toFixed(2))}
-        onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) onChange(Math.min(20, Math.max(0.05, v))); }} />
+      <input type="range" aria-label={label} min={0} max={max} step={0.1} value={Math.min(max, value)} onChange={(e) => onChange(Number(e.target.value))} />
+      <input className="num" type="number" inputMode="decimal" aria-label={`${label} in mm`} step={0.1} min={0} max={20} value={Number(value.toFixed(2))}
+        onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) onChange(Math.min(20, Math.max(0, v))); }} />
       <span className="muted">mm</span>
     </label>
   );
@@ -406,10 +406,10 @@ export function PagePanel() {
       </div>
 
       <div className="psec"><b>Print lines</b>
-        <Switch label="Cutting lines around photos" hint="Thin line to cut along" checked={fb.on} onChange={(b) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, on: b } }))} />
+        <ThickRow label="Cutting line" value={fb.on ? fb.widthMm : 0} min={0} max={5} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, on: v > 0, widthMm: v > 0 ? v : p.frameBorder.widthMm } }))} />
+        <span className="muted small" style={{ marginTop: -6 }}>Thin line around each photo to cut along. 0 means no line.</span>
         {fb.on && (
           <>
-            <ThickRow label="Line thickness" value={fb.widthMm} min={0.1} max={5} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, widthMm: v } }))} />
             <Swatches label="Cutting line color" value={fb.color} onChange={(c) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, color: c } }))} />
             <div className="field">Cutting line sits
               <Segmented value={fb.place} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, place: v } }))} options={[['outside', 'Outside the photo'], ['inside', 'Inside']]} />
@@ -422,13 +422,9 @@ export function PagePanel() {
       </div>
 
       <div className="psec"><b>Border</b>
-        <Switch label="Border around the page" checked={page.border.on} onChange={(b) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, on: b } }))} />
-        {page.border.on && (
-          <>
-            <ThickRow label="Border thickness" value={page.border.widthMm} min={0.5} max={10} onChange={(v) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, widthMm: v } }))} />
-            <Swatches label="Border color" value={page.border.color} onChange={(c) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, color: c } }))} />
-          </>
-        )}
+        <ThickRow label="Page border" value={page.border.on ? page.border.widthMm : 0} min={0} max={10} onChange={(v) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, on: v > 0, widthMm: v > 0 ? v : pg.border.widthMm } }))} />
+        <span className="muted small" style={{ marginTop: -6 }}>A frame around the edge of the page. 0 means no border.</span>
+        {page.border.on && <Swatches label="Border color" value={page.border.color} onChange={(c) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, color: c } }))} />}
       </div>
     </div>
   );
