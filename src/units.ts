@@ -5,7 +5,7 @@ export const PRESETS: Record<string, [number, number]> = {
   A4: [210, 297],
   A5: [148, 210],
   Letter: [215.9, 279.4],
-  Legal: [215.9, 355.6],
+  Legal: [215.9, 330.2],
 };
 
 const PER_MM: Record<Unit, number> = { mm: 1, cm: 0.1, in: 1 / 25.4 };

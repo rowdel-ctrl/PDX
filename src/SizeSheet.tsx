@@ -5,7 +5,7 @@ import { MAX_MM, MIN_MM, PRESETS } from './units';
 import { Segmented } from './ui';
 import { Close, Edit } from './icons';
 
-const LABEL: Record<string, string> = { A4: '210 × 297 mm', A3: '297 × 420 mm', A5: '148 × 210 mm', Letter: '8.5 × 11 in', Legal: '8.5 × 14 in' };
+const LABEL: Record<string, string> = { A4: '210 × 297 mm', A3: '297 × 420 mm', A5: '148 × 210 mm', Letter: '8.5 × 11 in', Legal: '8.5 × 13 in' };
 const ORDER = ['A4', 'A3', 'A5', 'Letter', 'Legal'];
 
 /** "Pick a page size" sheet shown when starting a new document. */
