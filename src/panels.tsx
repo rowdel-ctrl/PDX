@@ -117,23 +117,14 @@ function FramesTab() {
   const ed = useEd();
   const { page, unit, fsize: size } = ed;
   const n = fillFrames(page, size.w, size.h).length;
+  const known = SIZE_CARDS.find(([, , w, h]) => (Math.abs(size.w - w) < 0.2 && Math.abs(size.h - h) < 0.2) || (Math.abs(size.w - h) < 0.2 && Math.abs(size.h - w) < 0.2));
   return (
     <>
-      <p className="muted small" style={{ margin: 0 }}>Pick a size, fill the page with frames, then add a photo. It goes in every frame. Use Crop to move or zoom it.</p>
-      <div className="size-grid">
-        {SIZE_CARDS.map(([name, label, w, h]) => {
-          const on = Math.abs(size.w - w) < 0.2 && Math.abs(size.h - h) < 0.2, k = 46 / Math.max(w, h);
-          return (
-            <button key={name} className={'tcard size-pick' + (on ? ' on' : '')} aria-pressed={on} onClick={() => ed.setFsize(w, h)}>
-              <span className="tcard-thumb"><span className="size-box" style={{ width: w * k, height: h * k }} /></span>
-              <span className="tcard-name">{name}</span>
-              <span className="tcard-sub">{label}</span>
-            </button>
-          );
-        })}
+      <SizeCards />
+      <div className="fillbar">
+        <div className="fillbar-tx"><span className="muted small">Last size</span><b>{known ? known[0] : 'Custom'} · {fmt(size.w, unit)}×{fmt(size.h, unit)} {unit}</b></div>
+        <button className="btn primary" disabled={!n} onClick={ed.fillWithFrames}>{n ? `Fill page with ${n} frames` : 'Does not fit'}</button>
       </div>
-      <button className="btn primary wide" style={{ marginTop: 0 }} disabled={!n} onClick={ed.fillWithFrames}>{n ? `Fill page with ${n} frames` : 'This size does not fit'}</button>
-      <button className="btn tonal" onClick={ed.addFrame}><Plus /> Add just one frame</button>
       <More>
         <div className="field">Custom frame size
           <div className="row">
@@ -141,6 +132,7 @@ function FramesTab() {
             <NumField label="Height" mm={size.h} unit={unit} onCommit={(mm) => ed.setFsize(size.w, mm)} />
             <button className="btn" onClick={() => ed.setFsize(size.h, size.w)} aria-label="Swap width and height">⇄</button>
           </div>
+          <button className="btn tonal" onClick={ed.addFrame}><Plus /> Add one frame of this size</button>
         </div>
         <Switch label="Same photo in every frame" hint="When all frames are empty" checked={ed.sameAll} onChange={ed.setSameAll} />
         <Switch label="Center faces automatically" hint="Off by default. New photos go on the biggest face." checked={ed.autoFace} onChange={ed.setAutoFace} />
@@ -185,23 +177,25 @@ function SizeCards() {
   const up = (e: React.PointerEvent) => {
     const c = d.current; d.current = null; if (!c) return;
     window.clearTimeout(c.timer);
-    if (!c.on) { ed.addFrameSized(c.w, c.h); return; }            // a tap: put it at a free spot
+    if (!c.on) { ed.setFsize(c.w, c.h); ed.addFrameSized(c.w, c.h); return; }            // a tap: put it at a free spot
     setGhost(null);
     const r = pageRect();
     if (r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+      ed.setFsize(c.w, c.h);
       ed.addFrameSized(c.w, c.h, { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height });
     }
   };
   const cancel = () => { if (d.current) window.clearTimeout(d.current.timer); d.current = null; setGhost(null); };
   return (
-    <div className="field">Photo sizes
-      <span className="muted small">Tap to add a frame to this page, or hold and drag it where you want it.</span>
+    <div className="field">
+      <span className="muted small">Tap a size to add a frame. Hold and drag to place it where you want.</span>
       <div className="seg"><button className={!land ? 'on' : ''} onClick={() => setLand(false)}>Portrait</button><button className={land ? 'on' : ''} onClick={() => setLand(true)}>Landscape</button></div>
-      <div className="strip">
+      <div className="size-grid">
         {SIZE_CARDS.map(([name, label, w0, h0]) => {
           const { w, h } = dims(w0, h0), k = 46 / Math.max(w, h);
+          const on = Math.abs(ed.fsize.w - w) < 0.2 && Math.abs(ed.fsize.h - h) < 0.2;
           return (
-            <button key={name} className="tcard size-card" onPointerDown={(e) => down(e, w0, h0)} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel} onContextMenu={(e) => e.preventDefault()}>
+            <button key={name} className={'tcard size-pick size-card' + (on ? ' on' : '')} onPointerDown={(e) => down(e, w0, h0)} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel} onContextMenu={(e) => e.preventDefault()}>
               <span className="tcard-thumb"><span className="size-box" style={{ width: w * k, height: h * k }} /></span>
               <span className="tcard-name">{name}</span>
               <span className="tcard-sub">{label}</span>
@@ -224,8 +218,7 @@ function TemplatesTab() {
   const save = () => { saveMyTemplate(name || 'My template', ed.page); setMine(myTemplates()); setName(''); ed.say('Saved. Find it under My templates.'); };
   return (
     <>
-      <SizeCards />
-      <p className="muted small" style={{ margin: 0 }}>Templates replace the page layout. You can undo it.</p>
+      <p className="muted small" style={{ margin: 0 }}>Full-page layouts. Tapping one replaces this page's layout. You can undo it.</p>
       <div className="field">My templates
         {mineThumbs.length > 0 && (
           <div className="strip">
@@ -262,7 +255,7 @@ function TemplatesTab() {
 
 export function AddPanel() {
   const ed = useEd();
-  if (ed.addTab === 'frames') return <div className="panel-body"><SubHead title="Frame sizes" onBack={() => ed.setAddTab('photos')} /><FramesTab /></div>;
+  if (ed.addTab === 'frames') return <div className="panel-body"><SubHead title="Sizes" onBack={() => ed.setAddTab('photos')} /><FramesTab /></div>;
   if (ed.addTab === 'templates') return <div className="panel-body"><SubHead title="Templates" onBack={() => ed.setAddTab('photos')} /><TemplatesTab /></div>;
   return (
     <div className="panel-body">

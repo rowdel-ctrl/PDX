@@ -390,3 +390,8 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .size-pick .tcard-name,.size-pick .tcard-sub{text-align:center}
 .size-pick.on{border-color:var(--accent);background:var(--accent-soft)}
 .screen.compact-add{--sheet-h:188px}
+
+.fillbar{display:flex;align-items:center;gap:10px;position:sticky;bottom:0;background:var(--card);padding:10px 0 4px;border-top:1px solid var(--line)}
+.fillbar-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.fillbar-tx b{font-family:var(--head);font-weight:500;font-size:13px}
+.size-pick.size-card{touch-action:manipulation}
