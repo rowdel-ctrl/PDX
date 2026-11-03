@@ -23,3 +23,4 @@ export const Undo = () => <I><path d="M9 14L4 9l5-5" /><path d="M4 9h10a6 6 0 0 
 export const Redo = () => <I><path d="M15 14l5-5-5-5" /><path d="M20 9H10a6 6 0 0 0 0 12h3" /></I>;
 export const RotL = () => <I><path d="M4 4v6h6" /><path d="M4.5 14a8 8 0 1 0 2-8.5L4 10" /></I>;
 export const RotR = () => <I><path d="M20 4v6h-6" /><path d="M19.5 14a8 8 0 1 1-2-8.5L20 10" /></I>;
+export const FrameIcon = () => <I><rect x="4" y="3" width="16" height="18" rx="1.5" strokeDasharray="3 2.5" /><circle cx="12" cy="10" r="2.5" /><path d="M7 18c.8-3 3-4 5-4s4.2 1 5 4" /></I>;

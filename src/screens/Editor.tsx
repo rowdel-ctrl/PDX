@@ -1,25 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Crop, LayoutId, Page, PageImage, PageText, Project, Unit } from '../types';
+import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayItem, Unit } from '../types';
 import { listProjects, newPage, saveProject } from '../storage';
-import { applyLayout, cellCount, cellRect, cropToAspect, dispAspect, fillPage, fitCount, freeBox, LAYOUTS, rotateCrop } from '../layout';
+import { applyLayout, cellCount, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, fitCount, freeBox, freeSpot, LAYOUTS, rotateCrop } from '../layout';
 import { deleteImages, FULL, importImage, newId } from '../images';
 import { fmt, MAX_MM, MIN_MM, presetOf, PRESETS, toMm } from '../units';
 import PageCanvas from '../PageCanvas';
-import PageThumb from '../PageThumb';
+import PageThumb, { PhotoThumb } from '../PageThumb';
+import NumField from '../NumField';
 import Export from './Export';
 import { useBack } from '../back';
-import { Back, Copy, Grid, Image as ImageIcon, Left, Palette, Pages as PagesIcon, Plus, Right, Size, Trash, Type, Undo, Redo, RotL, RotR } from '../icons';
+import { Back, Copy, Grid, Image as ImageIcon, Left, Palette, Pages as PagesIcon, Plus, Right, Size, Trash, Type, Undo, Redo, RotL, RotR, FrameIcon } from '../icons';
 
-type Tab = 'images' | 'layout' | 'size' | 'style' | 'text' | 'pages';
+type Tab = 'images' | 'layout' | 'size' | 'style' | 'text' | 'frames' | 'pages';
 const TABS: [Tab, string, () => React.ReactElement][] = [
-  ['images', 'Images', ImageIcon], ['layout', 'Layout', Grid], ['size', 'Size', Size], ['style', 'Style', Palette], ['text', 'Text', Type], ['pages', 'Pages', PagesIcon],
+  ['images', 'Images', ImageIcon], ['layout', 'Layout', Grid], ['size', 'Size', Size], ['style', 'Style', Palette], ['text', 'Text', Type], ['frames', 'Frames', FrameIcon], ['pages', 'Pages', PagesIcon],
 ];
 
 const PHOTO_SIZES: [string, number, number][] = [
   ['Passport 35×45 mm', 35, 45], ['US 2×2 in', 50.8, 50.8], ['Wallet 2.5×3.5 in', 63.5, 88.9], ['4×6 in', 101.6, 152.4], ['5×7 in', 127, 177.8],
 ];
 
-const filesOf = (p: Project) => new Set(p.pages.flatMap((pg) => pg.images.map((i) => i.file)));
+const FRAME_SIZES: [string, number, number][] = [
+  ['Passport 35×45 mm', 35, 45], ['1×1 in', 25.4, 25.4], ['1.5×1.5 in', 38.1, 38.1], ['2×2 in', 50.8, 50.8],
+  ['3×4 cm', 30, 40], ['Wallet 2×3 in', 50.8, 76.2],
+];
+
+const filesOf = (p: Project) => new Set([
+  ...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]),
+  ...p.tray.map((t) => t.file),
+]);
 
 export default function Editor({ id, onBack }: { id: string; onBack: () => void }) {
   const [proj, setProj] = useState<Project | null>(() => listProjects().find((p) => p.id === id) ?? null);
@@ -36,6 +45,11 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
   const [toast, setToast] = useState('');
   const [saved, setSaved] = useState(true);
   const [cropOpen, setCropOpen] = useState(false);
+  const [fsize, setFsize] = useState({ w: 35, h: 45 });
+  const [selTray, setSelTray] = useState<string | null>(null);
+  const [adjust, setAdjust] = useState(false);
+  const [over, setOver] = useState<string | null>(null);
+  const hit = useRef<((x: number, y: number) => string | null) | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // autosave
@@ -219,12 +233,65 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
   const updateText = (tid: string, patch: Partial<PageText>) =>
     editPage((pg) => ({ ...pg, texts: pg.texts.map((t) => (t.id === tid ? { ...t, ...patch } : t)) }));
 
+  // ---- frames (ID photos)
+  const selFrame = page.frames.find((f) => f.id === sel) ?? null;
+  const updateFrame = (fid: string, patch: Partial<Frame>) =>
+    editPage((pg) => ({ ...pg, frames: pg.frames.map((f) => (f.id === fid ? clampFrame({ ...f, ...patch }, pg.widthMm, pg.heightMm) : f)) }));
+  const placePhoto = (fid: string, t: TrayItem) => {
+    updateFrame(fid, { file: t.file, aspect: t.aspect, rot: 0, zoom: 1, cx: 0.5, cy: 0.5 });
+    setSel(fid);
+  };
+  const addTray = async (files: FileList | null) => {
+    if (!files?.length) return;
+    say('Adding photos…');
+    const items: TrayItem[] = [];
+    for (const f of Array.from(files)) {
+      try { const r = await importImage(f); seen.current.add(r.file); items.push({ id: newId(), file: r.file, aspect: r.aspect }); } catch { /* skip */ }
+    }
+    if (items.length) { edit((p) => ({ ...p, tray: [...p.tray, ...items] })); say(`Added ${items.length}`); } else say('Could not read that photo');
+  };
+  const addFrame = () => {
+    let { w, h } = fsize;
+    let spot = freeSpot(page, w, h);
+    if (!spot) { spot = freeSpot(page, h, w); if (spot) [w, h] = [h, w]; }
+    if (!spot) { say('No room for another frame on this page'); return; }
+    const f = emptyFrame(spot.x, spot.y, w, h, page.widthMm, page.heightMm);
+    editPage((pg) => ({ ...pg, frames: [...pg.frames, f] })); setSel(f.id);
+  };
+  const fillWithFrames = () => {
+    const fr = fillFrames(page, fsize.w, fsize.h);
+    if (!fr.length) { say('That size does not fit on this page'); return; }
+    editPage((pg) => ({ ...pg, frames: fr })); setSel(fr[0].id);
+  };
+  const resizeFrame = (f: Frame, w: number, h: number) => editPage((pg) => ({
+    ...pg, frames: pg.frames.map((q) => {
+      if (q.id !== f.id) return q;
+      const cx = q.x + q.w / 2, cy = q.y + q.h / 2, fw = w / pg.widthMm, fh = h / pg.heightMm;
+      return clampFrame({ ...q, w: fw, h: fh, x: Math.min(1 - fw, Math.max(0, cx - fw / 2)), y: Math.min(1 - fh, Math.max(0, cy - fh / 2)) }, pg.widthMm, pg.heightMm);
+    }),
+  }));
+  const rotateFrame = (f: Frame, dir: 1 | -1) => {
+    let { cx, cy } = f;
+    for (let k = 0; k < (dir === 1 ? 1 : 3); k++) [cx, cy] = [1 - cy, cx];
+    updateFrame(f.id, { rot: (f.rot + dir + 4) % 4, cx, cy });
+  };
+  const copyToAll = (f: Frame) => editPage((pg) => ({
+    ...pg, frames: pg.frames.map((q) => clampFrame({ ...q, file: f.file, aspect: f.aspect, rot: f.rot, zoom: f.zoom, cx: f.cx, cy: f.cy }, pg.widthMm, pg.heightMm)),
+  }));
+  const onCanvasSelect = (id: string | null, tap?: boolean) => {
+    setSel(id);
+    const f = id ? page.frames.find((q) => q.id === id) : null;
+    if (!f) { setAdjust(false); return; }
+    setTab('frames');
+    if (tap && !f.file && selTray) { const t = proj.tray.find((x) => x.id === selTray); if (t) placePhoto(f.id, t); }
+  };
+
   const goPage = (i: number) => { setPi(i); setSel(null); };
   const addPage = () => { edit((p) => ({ ...p, pages: [...p.pages, newPage(p.widthMm, p.heightMm)] })); goPage(proj.pages.length); };
   const dupPage = (i: number) => {
     edit((p) => {
       const src = p.pages[i];
-      const copy: Page = { ...src, id: newId(), images: src.images.map((im) => ({ ...im, id: newId() })), texts: src.texts.map((t) => ({ ...t, id: newId() })) };
+      const copy: Page = { ...src, id: newId(), images: src.images.map((im) => ({ ...im, id: newId() })), texts: src.texts.map((t) => ({ ...t, id: newId() })), frames: src.frames.map((f) => ({ ...f, id: newId() })) };
       const pages = [...p.pages]; pages.splice(i + 1, 0, copy);
       return { ...p, pages };
     });
@@ -265,8 +332,9 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
         <button className="btn primary" onClick={() => setExporting(true)}>Export</button>
       </header>
 
-      <PageCanvas page={page} pageNo={pi + 1} pageNumbers={proj.pageNumbers} unit={unit} selectedId={sel} onSelect={setSel}
-        onChange={updateImage} onChangeText={updateText} onSwap={swap} />
+      <PageCanvas page={page} pageNo={pi + 1} pageNumbers={proj.pageNumbers} unit={unit} selectedId={sel} onSelect={onCanvasSelect}
+        onChange={updateImage} onChangeText={updateText} onSwap={swap} onChangeFrame={updateFrame}
+        adjust={adjust && !!selFrame?.file} dropTarget={over} cutLines={proj.cutLines} hitRef={hit} />
 
       <div className="pager">
         <button className="icon-btn" disabled={pi === 0} onClick={() => goPage(pi - 1)} aria-label="Previous page"><Left /></button>
@@ -389,6 +457,19 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
             <p className="muted small">Text uses a standard PDF font (Latin letters only; other characters print as "?").</p>
           </div>
         )}
+        {tab === 'frames' && (
+          <FramesPanel project={proj} page={page} unit={unit} frame={selFrame} selTray={selTray} adjust={adjust} size={fsize} hitRef={hit} setOver={setOver}
+            onSize={(w, h) => setFsize({ w, h })} onAddFrame={addFrame} onFill={fillWithFrames}
+            onClear={() => { editPage((pg) => ({ ...pg, frames: [] })); setSel(null); }}
+            onAddPhotos={addTray} onSelectTray={setSelTray}
+            onRemoveTray={(tid) => { edit((p) => ({ ...p, tray: p.tray.filter((t) => t.id !== tid) })); if (selTray === tid) setSelTray(null); }}
+            onPlace={placePhoto} onFrame={(patch) => selFrame && updateFrame(selFrame.id, patch)}
+            onRotate={(d) => selFrame && rotateFrame(selFrame, d)}
+            onRemovePhoto={() => selFrame && updateFrame(selFrame.id, { file: '', zoom: 1, cx: 0.5, cy: 0.5, rot: 0 })}
+            onSetSize={() => selFrame && resizeFrame(selFrame, fsize.w, fsize.h)} onCopyAll={() => selFrame && copyToAll(selFrame)}
+            onDelete={() => { if (selFrame) { editPage((pg) => ({ ...pg, frames: pg.frames.filter((f) => f.id !== selFrame.id) })); setSel(null); } }}
+            onAdjust={setAdjust} onCutLines={(b) => edit((p) => ({ ...p, cutLines: b }))} />
+        )}
         {tab === 'pages' && <PagesPanel project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} />}
       </section>
 
@@ -401,6 +482,128 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
     </div>
   );
 }
+
+function FramesPanel(p: {
+  project: Project; page: Page; unit: Unit; frame: Frame | null; selTray: string | null; adjust: boolean; size: { w: number; h: number };
+  hitRef: React.MutableRefObject<((x: number, y: number) => string | null) | null>; setOver: (id: string | null) => void;
+  onSize: (w: number, h: number) => void; onAddFrame: () => void; onFill: () => void; onClear: () => void;
+  onAddPhotos: (f: FileList | null) => void; onSelectTray: (id: string | null) => void; onRemoveTray: (id: string) => void;
+  onPlace: (frameId: string, t: TrayItem) => void; onFrame: (patch: Partial<Frame>) => void; onRotate: (d: 1 | -1) => void;
+  onRemovePhoto: () => void; onSetSize: () => void; onCopyAll: () => void; onDelete: () => void; onAdjust: (b: boolean) => void; onCutLines: (b: boolean) => void;
+}) {
+  const { project, page, frame, unit, size } = p;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const strip = useRef<HTMLDivElement>(null);
+  const [ghost, setGhost] = useState<{ x: number; y: number; t: TrayItem } | null>(null);
+  const ghostRef = useRef(ghost); ghostRef.current = ghost;
+  const timer = useRef(0);
+  const down0 = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const el = strip.current!;
+    const stop = (e: TouchEvent) => { if (ghostRef.current) e.preventDefault(); };
+    el.addEventListener('touchmove', stop, { passive: false });
+    return () => el.removeEventListener('touchmove', stop);
+  }, []);
+
+  const down = (e: React.PointerEvent, t: TrayItem) => {
+    const target = e.currentTarget as HTMLElement, pid = e.pointerId;
+    down0.current = { x: e.clientX, y: e.clientY };
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      timer.current = 0;
+      try { target.setPointerCapture(pid); } catch { /* ignore */ }
+      setGhost({ x: down0.current.x, y: down0.current.y, t });
+      navigator.vibrate?.(15);
+    }, 250);
+  };
+  const move = (e: React.PointerEvent) => {
+    if (ghostRef.current) {
+      setGhost({ ...ghostRef.current, x: e.clientX, y: e.clientY });
+      p.setOver(p.hitRef.current?.(e.clientX, e.clientY) ?? null);
+    } else if (timer.current && Math.hypot(e.clientX - down0.current.x, e.clientY - down0.current.y) > 10) {
+      window.clearTimeout(timer.current); timer.current = 0; // user is scrolling the strip
+    }
+  };
+  const up = (e: React.PointerEvent, t: TrayItem) => {
+    const g = ghostRef.current;
+    if (g) {
+      const target = p.hitRef.current?.(e.clientX, e.clientY);
+      if (target) p.onPlace(target, g.t);
+      setGhost(null); p.setOver(null);
+    } else if (timer.current) {
+      window.clearTimeout(timer.current); timer.current = 0;
+      if (frame && !frame.file) p.onPlace(frame.id, t);          // tap with an empty frame selected: place it
+      else p.onSelectTray(p.selTray === t.id ? null : t.id);      // otherwise highlight it, then tap an empty frame
+    }
+  };
+  const cancel = () => { window.clearTimeout(timer.current); timer.current = 0; setGhost(null); p.setOver(null); };
+
+  return (
+    <div className="panel-body">
+      <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { p.onAddPhotos(e.target.files); e.target.value = ''; }} />
+      <div className="field" style={{ marginTop: 0 }}>Photos — tap one (with a frame selected), or touch and hold, then drag onto a frame
+        <div className="strip" ref={strip}>
+          <button className="strip-item add" onClick={() => fileRef.current?.click()} aria-label="Add photos"><Plus /></button>
+          {project.tray.map((t) => (
+            <div key={t.id} className={'strip-item tray' + (p.selTray === t.id ? ' on' : '')} role="button" aria-label="Photo"
+              onPointerDown={(e) => down(e, t)} onPointerMove={move} onPointerUp={(e) => up(e, t)} onPointerCancel={cancel} onContextMenu={(e) => e.preventDefault()}>
+              <PhotoThumb file={t.file} size={64} />
+              <button className="x" aria-label="Remove photo from tray" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); p.onRemoveTray(t.id); }}>×</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="field">Frame size
+        <div className="chips">
+          {FRAME_SIZES.map(([n, w, h]) => <button key={n} className={'chip' + (Math.abs(size.w - w) < 0.2 && Math.abs(size.h - h) < 0.2 ? ' on' : '')} onClick={() => p.onSize(w, h)}>{n}</button>)}
+        </div>
+        <div className="row">
+          <NumField label="Width" mm={size.w} unit={unit} onCommit={(mm) => p.onSize(mm, size.h)} />
+          <NumField label="Height" mm={size.h} unit={unit} onCommit={(mm) => p.onSize(size.w, mm)} />
+          <button className="btn" onClick={() => p.onSize(size.h, size.w)} aria-label="Swap width and height">⇄</button>
+        </div>
+      </div>
+      <div className="row">
+        <button className="btn primary" onClick={p.onAddFrame}><Plus /> Add frame</button>
+        <button className="btn" onClick={p.onFill}>Fill page ({fillFramesCount(page, size.w, size.h)})</button>
+        {page.frames.length > 0 && <button className="btn danger-outline" onClick={p.onClear}><Trash /> Clear</button>}
+      </div>
+
+      {frame ? (
+        <div className="field">Selected frame · {fmt(frame.w * page.widthMm, unit)} × {fmt(frame.h * page.heightMm, unit)} {unit}
+          {frame.file ? (
+            <>
+              <div className="tools">
+                <button className={'btn' + (p.adjust ? ' on' : '')} onClick={() => p.onAdjust(!p.adjust)}>{p.adjust ? 'Done adjusting' : 'Move photo'}</button>
+                <button className="btn" onClick={() => p.onRotate(-1)} aria-label="Rotate left"><RotL /></button>
+                <button className="btn" onClick={() => p.onRotate(1)} aria-label="Rotate right"><RotR /></button>
+                <button className="btn" onClick={p.onCopyAll}>Copy to all frames</button>
+                <button className="btn" onClick={p.onRemovePhoto}>Remove photo</button>
+              </div>
+              <label className="slider"><span>Zoom</span>
+                <input type="range" min={1} max={4} step={0.02} value={frame.zoom} onChange={(e) => p.onFrame({ zoom: Number(e.target.value) })} />
+                <span className="muted val">{Math.round(frame.zoom * 100)}%</span></label>
+              {p.adjust && <span className="muted small">Drag the photo inside the frame to position it.</span>}
+            </>
+          ) : <span className="muted small">Empty. Pick a photo above to put in it.</span>}
+          <div className="tools">
+            <button className="btn" onClick={p.onSetSize}>Set to {fmt(size.w, unit)}×{fmt(size.h, unit)} {unit}</button>
+            <button className="btn danger-outline" onClick={p.onDelete}><Trash /> Delete frame</button>
+          </div>
+        </div>
+      ) : <p className="muted small">Tap a frame on the page to select it. Drag it to move it.</p>}
+      <label className="field-row">Cut lines around photos
+        <input type="checkbox" checked={project.cutLines} onChange={(e) => p.onCutLines(e.target.checked)} />
+      </label>
+
+      {ghost && <div className="ghost" style={{ left: ghost.x, top: ghost.y }}><PhotoThumb file={ghost.t.file} size={72} /></div>}
+    </div>
+  );
+}
+
+const fillFramesCount = (page: Page, w: number, h: number) => fillFrames(page, w, h).length;
 
 function Slider({ label, value, max, step = 1, unit, onChange }: { label: string; value: number; max: number; step?: number; unit: Unit; onChange: (v: number) => void }) {
   return (

@@ -1,6 +1,7 @@
 import { PDFDocument, PDFFont, rgb, StandardFonts } from 'pdf-lib';
 import type { Project, Quality } from './types';
 import { exportBytes } from './images';
+import { frameCrop } from './layout';
 import { mmToPt } from './units';
 
 const hex = (c: string) => {
@@ -30,6 +31,15 @@ export async function buildPdf(p: Project, quality: Quality, onProgress?: (n: nu
       let e = embedded.get(key);
       if (!e) { e = await doc.embedJpg(await exportBytes(im.file, im.rot, im.crop, quality)); embedded.set(key, e); }
       page.drawImage(e, { x: im.x * W, y: H - (im.y + im.h) * H, width: im.w * W, height: im.h * H });
+    }
+    for (const f of pg.frames) {
+      if (!f.file) continue;
+      const crop = frameCrop(f, pg.widthMm, pg.heightMm);
+      const key = `${f.file}|${f.rot}|${JSON.stringify(crop)}`;
+      let e = embedded.get(key);
+      if (!e) { e = await doc.embedJpg(await exportBytes(f.file, f.rot, crop, quality)); embedded.set(key, e); }
+      page.drawImage(e, { x: f.x * W, y: H - (f.y + f.h) * H, width: f.w * W, height: f.h * H });
+      if (p.cutLines) page.drawRectangle({ x: f.x * W, y: H - (f.y + f.h) * H, width: f.w * W, height: f.h * H, borderColor: rgb(0.55, 0.55, 0.55), borderWidth: 0.3 });
     }
     if (pg.border.on) {
       const bw = mmToPt(pg.border.widthMm);

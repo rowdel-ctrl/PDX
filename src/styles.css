@@ -86,3 +86,8 @@ h1{margin:4px 0 0;font-size:28px;font-weight:800}
 .warn{color:var(--danger);font-weight:600;font-size:13px}
 :root[data-theme=dark] .warn{color:#ff8a80}
 .footbar{display:flex;gap:8px}.footbar .btn{flex:1;margin-top:0}
+.strip-item.tray{position:relative;touch-action:pan-x;user-select:none;padding:4px}
+.strip-item.add{border-style:dashed;color:var(--accent)}
+.strip-item .x{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-size:14px;line-height:1;padding:0}
+.strip{padding-top:8px}
+.ghost{position:fixed;transform:translate(-50%,-60%) scale(1.05);opacity:.9;pointer-events:none;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4);border-radius:8px}

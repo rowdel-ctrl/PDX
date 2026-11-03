@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Image as KImage, Layer, Line, Rect, Stage, Text as KText, Transformer } from 'react-konva';
+import { Group, Image as KImage, Layer, Line, Rect, Stage, Text as KText, Transformer } from 'react-konva';
 import Konva from 'konva';
-import type { Page, PageImage, PageText, Unit } from './types';
-import { variantUrl } from './images';
+import type { Frame, Page, PageImage, PageText, Unit } from './types';
+import { FULL, variantUrl } from './images';
+import { frameCrop } from './layout';
 import { fmt } from './units';
 
 const SNAP_PX = 8;
@@ -42,7 +43,7 @@ function snap(node: Konva.Node, others: { x: number; y: number; w: number; h: nu
 
 interface Common {
   S: Size; m: number; unit: Unit; page: Page; selected: boolean;
-  onSelect: () => void; setGuides: (g: Guides) => void; setHud: (s: string) => void;
+  onSelect: () => void; onTap: () => void; setGuides: (g: Guides) => void; setHud: (s: string) => void;
   others: { x: number; y: number; w: number; h: number }[];
 }
 
@@ -108,6 +109,58 @@ function Item({ im, c, onChange, onSwap }: {
   );
 }
 
+
+function FrameItem({ f, c, kz, adjust, dropTarget, cutLines, onChange }: {
+  f: Frame; c: Common; kz: number; adjust: boolean; dropTarget: boolean; cutLines: boolean; onChange: (p: Partial<Frame>) => void;
+}) {
+  const { S, m, unit, page } = c;
+  const [img, setImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    if (!f.file) { setImg(null); return; }
+    let on = true;
+    variantUrl(f.file, f.rot, FULL, 1400).then((u) => { const i = new window.Image(); i.onload = () => on && setImg(i); i.src = u; }).catch(() => {});
+    return () => { on = false; };
+  }, [f.file, f.rot]);
+  const guides = useSnapHaptics(c.setGuides);
+  const fw = f.w * S.w, fh = f.h * S.h;
+  const crop = frameCrop(f, page.widthMm, page.heightMm);
+  const mmW = page.widthMm / S.w, mmH = page.heightMm / S.h;
+  const pan = useRef({ px: 0, py: 0, cx: 0, cy: 0 });
+  const imgRef = useRef<Konva.Image>(null);
+  void kz;
+  return (
+    <Group
+      x={f.x * S.w} y={f.y * S.h} width={fw} height={fh}
+      draggable={!adjust} onClick={c.onTap} onTap={c.onTap} onDragStart={c.onSelect}
+      onDragMove={(e) => { guides(snap(e.target, c.others, S, m)); c.setHud(`${fmt(f.w * page.widthMm, unit)} × ${fmt(f.h * page.heightMm, unit)} ${unit}  ·  x ${fmt(e.target.x() * mmW, unit)}  y ${fmt(e.target.y() * mmH, unit)}`); }}
+      onDragEnd={(e) => { guides(null); c.setHud(''); onChange({ x: e.target.x() / S.w, y: e.target.y() / S.h }); }}
+    >
+      <Rect width={fw} height={fh} fill={img ? '#fff' : dropTarget ? '#FFD0E6' : '#EEF0FF'} />
+      {img && (
+        <KImage
+          ref={imgRef} image={img} width={fw} height={fh}
+          crop={{ x: crop.x * img.width, y: crop.y * img.height, width: crop.w * img.width, height: crop.h * img.height }}
+          draggable={adjust && c.selected}
+          onDragStart={(e) => { const p = e.target.getStage()!.getPointerPosition()!; pan.current = { px: p.x, py: p.y, cx: f.cx, cy: f.cy }; }}
+          onDragMove={(e) => {
+            const p = e.target.getStage()!.getPointerPosition()!;
+            e.target.position({ x: 0, y: 0 });
+            onChange({ cx: pan.current.cx - ((p.x - pan.current.px) / fw) * crop.w, cy: pan.current.cy - ((p.y - pan.current.py) / fh) * crop.h });
+          }}
+          onDragEnd={(e) => e.target.position({ x: 0, y: 0 })}
+        />
+      )}
+      {!img && (
+        <KText width={fw} height={fh} align="center" verticalAlign="middle" fontSize={Math.max(9, Math.min(fw, fh) / 6)} fill="#5B6372" listening={false}
+          text={f.file ? '…' : `Drop photo\n${fmt(f.w * page.widthMm, unit)}×${fmt(f.h * page.heightMm, unit)} ${unit}`} />
+      )}
+      <Rect width={fw} height={fh} listening={false}
+        stroke={dropTarget ? GUIDE : c.selected ? '#3D4DFF' : cutLines || !img ? '#8a93a6' : undefined}
+        strokeWidth={dropTarget || c.selected ? 2 : 1} dash={img ? undefined : [5, 4]} />
+    </Group>
+  );
+}
+
 function TextItem({ t, c, kz, onChange }: { t: PageText; c: Common; kz: number; onChange: (p: Partial<PageText>) => void }) {
   const { S, m, unit, page } = c;
   const ref = useRef<Konva.Text>(null);
@@ -131,12 +184,15 @@ function TextItem({ t, c, kz, onChange }: { t: PageText; c: Common; kz: number; 
   );
 }
 
-export default function PageCanvas({ page, pageNo, pageNumbers, unit, selectedId, onSelect, onChange, onChangeText, onSwap }: {
+export default function PageCanvas({ page, pageNo, pageNumbers, unit, selectedId, onSelect, onChange, onChangeText, onSwap, onChangeFrame, adjust, dropTarget, cutLines, hitRef }: {
   page: Page; pageNo: number; pageNumbers: boolean; unit: Unit; selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  onSelect: (id: string | null, tap?: boolean) => void;
   onChange: (imgId: string, p: Partial<PageImage>) => void;
   onChangeText: (id: string, p: Partial<PageText>) => void;
   onSwap: (aId: string, bId: string, startCx: number, startCy: number) => void;
+  onChangeFrame: (id: string, p: Partial<Frame>) => void;
+  adjust: boolean; dropTarget: string | null; cutLines: boolean;
+  hitRef: React.MutableRefObject<((x: number, y: number) => string | null) | null>;
 }) {
   const desk = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -205,9 +261,17 @@ export default function PageCanvas({ page, pageNo, pageNumbers, unit, selectedId
   const bw = page.border.on ? Math.max(1, page.border.widthMm * kz) : 0;
   const boxes = (skip: string) => [
     ...page.images.filter((i) => i.id !== skip).map((i) => ({ x: i.x * S.w, y: i.y * S.h, w: i.w * S.w, h: i.h * S.h })),
+    ...page.frames.filter((f) => f.id !== skip).map((f) => ({ x: f.x * S.w, y: f.y * S.h, w: f.w * S.w, h: f.h * S.h })),
   ];
+  hitRef.current = (cx, cy) => {
+    const r = stageRef.current?.container().getBoundingClientRect();
+    if (!r) return null;
+    const x = cx - r.left, y = cy - r.top;
+    const f = [...page.frames].reverse().find((q) => x >= q.x * S.w && x <= (q.x + q.w) * S.w && y >= q.y * S.h && y <= (q.y + q.h) * S.h);
+    return f ? f.id : null;
+  };
   const common = (id: string): Common => ({
-    S, m, unit, page, selected: id === selectedId, onSelect: () => onSelect(id), setGuides, setHud, others: boxes(id),
+    S, m, unit, page, selected: id === selectedId, onSelect: () => onSelect(id), onTap: () => onSelect(id, true), setGuides, setHud, others: boxes(id),
   });
   const pnSize = 10 * PT_MM * kz;
 
@@ -224,6 +288,9 @@ export default function PageCanvas({ page, pageNo, pageNumbers, unit, selectedId
                 {m > 2 && <Rect x={m} y={m} width={S.w - 2 * m} height={S.h - 2 * m} stroke="#8a93a6" dash={[5, 4]} strokeWidth={1} listening={false} />}
                 {page.images.map((im) => (
                   <Item key={im.id} im={im} c={common(im.id)} onChange={(p) => onChange(im.id, p)} onSwap={(b, cx, cy) => onSwap(im.id, b, cx, cy)} />
+                ))}
+                {page.frames.map((f) => (
+                  <FrameItem key={f.id} f={f} c={common(f.id)} kz={kz} adjust={adjust} dropTarget={dropTarget === f.id} cutLines={cutLines} onChange={(p) => onChangeFrame(f.id, p)} />
                 ))}
                 {bw > 0 && <Rect x={bw / 2} y={bw / 2} width={S.w - bw} height={S.h - bw} stroke={page.border.color} strokeWidth={bw} listening={false} />}
                 {page.texts.map((t) => <TextItem key={t.id} t={t} kz={kz} c={common(t.id)} onChange={(p) => onChangeText(t.id, p)} />)}

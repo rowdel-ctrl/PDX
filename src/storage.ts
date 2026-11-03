@@ -14,9 +14,9 @@ export function listProjects(): Project[] {
 /** Fill in fields older saved projects don't have. */
 function normalize(p: Project): Project {
   return {
-    ...p, pageNumbers: p.pageNumbers ?? false,
+    ...p, pageNumbers: p.pageNumbers ?? false, cutLines: p.cutLines ?? true, tray: p.tray ?? [],
     pages: p.pages.map((pg) => ({
-      ...pg, texts: pg.texts ?? [],
+      ...pg, texts: pg.texts ?? [], frames: pg.frames ?? [],
       images: pg.images.map((im) => ({ ...im, rot: im.rot ?? 0, crop: im.crop ?? { x: 0, y: 0, w: 1, h: 1 } })),
     })),
   };
@@ -36,13 +36,13 @@ export function newPage(widthMm: number, heightMm: number): Page {
   return {
     id: newId(), widthMm, heightMm, background: '#FFFFFF',
     border: { on: false, widthMm: 1, color: '#12151C' },
-    marginMm: 10, spacingMm: 5, layout: '1', images: [], texts: [],
+    marginMm: 10, spacingMm: 5, layout: '1', images: [], texts: [], frames: [],
   };
 }
 
 export function newProject(name: string, widthMm = 210, heightMm = 297): Project {
   const now = Date.now();
-  return { id: newId(), name, created: now, updated: now, unit: 'mm', widthMm, heightMm, pageNumbers: false, pages: [newPage(widthMm, heightMm)] };
+  return { id: newId(), name, created: now, updated: now, unit: 'mm', widthMm, heightMm, pageNumbers: false, cutLines: true, tray: [], pages: [newPage(widthMm, heightMm)] };
 }
 
 export { applyLayout };

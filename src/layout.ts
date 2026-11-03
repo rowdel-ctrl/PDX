@@ -1,4 +1,4 @@
-import type { Crop, LayoutId, Page, PageImage } from './types';
+import type { Crop, Frame, LayoutId, Page, PageImage } from './types';
 import { newId } from './images';
 
 export const LAYOUTS: { id: LayoutId; label: string; cols: number; rows: number }[] = [
@@ -63,7 +63,7 @@ export function cropToAspect(im: Pick<PageImage, 'aspect' | 'rot'>, target: numb
 export const rotateCrop = (c: Crop): Crop => ({ x: 1 - c.y - c.h, y: c.x, w: c.h, h: c.w });
 
 /** How many w×h cells fit on the page, and the grid. */
-function gridFor(page: Page, w: number, h: number) {
+export function gridFor(page: Page, w: number, h: number) {
   const m = page.marginMm, s = page.spacingMm;
   const cols = Math.floor((page.widthMm - 2 * m + s) / (w + s));
   const rows = Math.floor((page.heightMm - 2 * m + s) / (h + s));
@@ -102,4 +102,55 @@ export function freeBox(page: Page, aspect: number, n: number): Box {
   const b = fit(aspect, { x: 0.15, y: 0.15, w: 0.7, h: 0.7 }, page.widthMm, page.heightMm);
   const off = (n % 5) * 0.03;
   return { ...b, x: Math.min(1 - b.w, b.x + off), y: Math.min(1 - b.h, b.y + off) };
+}
+
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+
+/** Which part of the photo a frame shows (in the rotated photo), from its zoom and centre. */
+export function frameCrop(f: Frame, pageW: number, pageH: number): Crop {
+  const fa = (f.w * pageW) / (f.h * pageH);
+  const ra = f.rot % 2 ? 1 / f.aspect : f.aspect;
+  let vw = 1, vh = 1;
+  if (ra > fa) vw = fa / ra; else vh = ra / fa;
+  vw /= f.zoom; vh /= f.zoom;
+  return { x: clamp(f.cx - vw / 2, 0, 1 - vw), y: clamp(f.cy - vh / 2, 0, 1 - vh), w: vw, h: vh };
+}
+
+/** Fraction of the visible area that one full drag across the frame moves (for panning). */
+export const frameVisible = (f: Frame, pageW: number, pageH: number) => {
+  const c = frameCrop(f, pageW, pageH);
+  return { w: c.w, h: c.h };
+};
+
+/** Keep the visible window inside the photo. */
+export function clampFrame(f: Frame, pageW: number, pageH: number): Frame {
+  const { w, h } = frameVisible(f, pageW, pageH);
+  return { ...f, cx: clamp(f.cx, w / 2, 1 - w / 2), cy: clamp(f.cy, h / 2, 1 - h / 2) };
+}
+
+export const emptyFrame = (x: number, y: number, w: number, h: number, pageW: number, pageH: number): Frame =>
+  ({ id: newId(), x: x / pageW, y: y / pageH, w: w / pageW, h: h / pageH, file: '', aspect: 1, rot: 0, zoom: 1, cx: 0.5, cy: 0.5 });
+
+/** Frames of one size laid out in a centred grid inside the margins (best of portrait/landscape). */
+export function fillFrames(page: Page, wMm: number, hMm: number): Frame[] {
+  const a = gridFor(page, wMm, hMm), b = gridFor(page, hMm, wMm);
+  const turned = b.cols * b.rows > a.cols * a.rows;
+  const [w, h] = turned ? [hMm, wMm] : [wMm, hMm];
+  const { cols, rows } = turned ? b : a;
+  const s = page.spacingMm;
+  const gw = cols * w + (cols - 1) * s, gh = rows * h + (rows - 1) * s;
+  const x0 = (page.widthMm - gw) / 2, y0 = (page.heightMm - gh) / 2;
+  const out: Frame[] = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) out.push(emptyFrame(x0 + c * (w + s), y0 + r * (h + s), w, h, page.widthMm, page.heightMm));
+  return out;
+}
+
+/** First free spot for one more frame (scans the page), or null. */
+export function freeSpot(page: Page, wMm: number, hMm: number): { x: number; y: number } | null {
+  const m = page.marginMm, s = Math.max(1, page.spacingMm);
+  const taken = page.frames.map((f) => ({ x: f.x * page.widthMm, y: f.y * page.heightMm, w: f.w * page.widthMm, h: f.h * page.heightMm }));
+  for (let y = m; y + hMm <= page.heightMm - m + 0.01; y += 2)
+    for (let x = m; x + wMm <= page.widthMm - m + 0.01; x += 2)
+      if (!taken.some((t) => x < t.x + t.w + s && x + wMm + s > t.x && y < t.y + t.h + s && y + hMm + s > t.y)) return { x, y };
+  return null;
 }
