@@ -395,3 +395,11 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .fillbar-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .fillbar-tx b{font-family:var(--head);font-weight:500;font-size:13px}
 .size-pick.size-card{touch-action:manipulation}
+
+.sec-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px}
+.sec-row .sec{margin:0}
+.sec-actions{display:flex;align-items:center;gap:6px}
+.card.picked{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.card .pcheck{z-index:3}
+.pickbar{position:sticky;bottom:0}
+.pickbar .btn{flex:1}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { listProjects, removeProject, saveProject, startProject, type StartKind } from '../storage';
 import { deleteImages } from '../images';
 import { fmt, presetOf } from '../units';
@@ -8,7 +8,7 @@ import { askConfirm } from '../notify';
 import SizeSheet from '../SizeSheet';
 import { newPage } from '../storage';
 import { projectFromTemplate, TEMPLATES } from '../templates';
-import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Plus, Size, More, Tune, Close } from '../icons';
+import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Plus, Size, More, Tune, Close, Checklist } from '../icons';
 
 export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, tab?: 'images' | 'frames' | 'layout') => void; onPoster: () => void }) {
   const [list, setList] = useState(listProjects);
@@ -18,6 +18,21 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
   const [printer, setPrinter] = useState(false);
   const [prints, setPrints] = useState<'Photo prints' | 'ID photos' | null>(null);
   const refresh = () => setList(listProjects());
+  // select several projects: the Select button, or touch and hold a project
+  const [picking, setPicking] = useState(false);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const held = useRef<{ timer: number; fired: boolean }>({ timer: 0, fired: false });
+  const toggle1 = (id: string) => setChosen((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+  const leavePick = () => { setPicking(false); setChosen([]); };
+  const delMany = async () => {
+    const ps = list.filter((x) => chosen.includes(x.id));
+    if (!ps.length) return;
+    if (!(await askConfirm({ title: `Delete ${ps.length} ${ps.length === 1 ? 'project' : 'projects'}?`, body: 'The projects and their photos are removed from this phone. This cannot be undone.', ok: 'Delete', danger: true }))) return;
+    const files = [...new Set(ps.flatMap((p) => [...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]), ...p.tray.map((t) => t.file)]))];
+    await deleteImages(files);
+    ps.forEach((p) => removeProject(p.id));
+    refresh(); leavePick();
+  };
   const thumbs = useMemo(() => TEMPLATES.map((t) => ({ t, page: t.make(newPage(t.w, t.h)) })), []);
 
   const toggle = () => {
@@ -83,23 +98,36 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
           ))}
         </div>
 
-        <h2 className="sec">Recent</h2>
+        <div className="sec-row">
+          <h2 className="sec">{picking ? `${chosen.length} selected` : 'Recent'}</h2>
+          {picking ? (
+            <div className="sec-actions">
+              <button className="btn tonal" onClick={() => setChosen(chosen.length === list.length ? [] : list.map((x) => x.id))}>{chosen.length === list.length ? 'Clear' : 'Select all'}</button>
+              <button className="icon-btn" onClick={leavePick} aria-label="Stop selecting"><Close /></button>
+            </div>
+          ) : list.length > 1 && <button className="btn tonal" onClick={() => setPicking(true)}><Checklist /> Select</button>}
+        </div>
         {list.length === 0 && <p className="empty muted">Your projects will show up here. Saved on this phone.</p>}
         <div className="cards">
           {list.map((p) => {
             const pg = p.pages[0];
             const sz = presetOf(p.widthMm, p.heightMm) ?? `${fmt(p.widthMm, p.unit)}×${fmt(p.heightMm, p.unit)} ${p.unit}`;
             return (
-              <div key={p.id} className="card">
-                <button className="card-main" onClick={() => onOpen(p.id)}>
+              <div key={p.id} className={'card' + (picking && chosen.includes(p.id) ? ' picked' : '')}>
+                {picking && <span className={'pcheck' + (chosen.includes(p.id) ? ' on' : '')} aria-hidden="true">{chosen.includes(p.id) ? '✓' : ''}</span>}
+                <button className="card-main" aria-pressed={picking ? chosen.includes(p.id) : undefined}
+                  onPointerDown={() => { held.current.fired = false; window.clearTimeout(held.current.timer); if (!picking) held.current.timer = window.setTimeout(() => { held.current.fired = true; navigator.vibrate?.(15); setPicking(true); setChosen([p.id]); }, 500); }}
+                  onPointerUp={() => window.clearTimeout(held.current.timer)} onPointerLeave={() => window.clearTimeout(held.current.timer)} onPointerCancel={() => window.clearTimeout(held.current.timer)}
+                  onContextMenu={(e) => e.preventDefault()}
+                  onClick={() => { if (held.current.fired) { held.current.fired = false; return; } picking ? toggle1(p.id) : onOpen(p.id); }}>
                   <div className="card-thumb"><PageThumb page={pg} maxW={140} maxH={112} /></div>
                   <div className="card-info">
                     <div className="card-name">{p.name}</div>
                     <div className="muted small">{sz} · {p.pages.length} {p.pages.length === 1 ? 'page' : 'pages'}</div>
                   </div>
                 </button>
-                <button className="dots" aria-label="Project options" onClick={() => setMenu(menu === p.id ? null : p.id)}><More /></button>
-                {menu === p.id && (
+                {!picking && <button className="dots" aria-label="Project options" onClick={() => setMenu(menu === p.id ? null : p.id)}><More /></button>}
+                {!picking && menu === p.id && (
                   <div className="menu">
                     <button onClick={() => rename(p.id)}><Edit /> Rename</button>
                     <button className="danger" onClick={() => del(p.id)}><Trash /> Delete</button>
@@ -110,6 +138,11 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
           })}
         </div>
       </main>
+      {picking && (
+        <footer className="footbar pickbar">
+          <button className="btn danger-outline" disabled={!chosen.length} onClick={delMany}><Trash /> Delete{chosen.length ? ` ${chosen.length}` : ''}</button>
+        </footer>
+      )}
       {prints && (
         <div className="sheet-back" onClick={() => setPrints(null)}>
           <div className="sheet" role="dialog" aria-label={prints} onClick={(e) => e.stopPropagation()}>
