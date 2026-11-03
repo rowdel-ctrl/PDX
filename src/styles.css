@@ -368,3 +368,9 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 
 .print-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;overflow-y:auto;max-height:58vh;padding-bottom:8px}
 .print-grid .tcard{width:100%}
+
+.print-head{display:flex;flex-direction:column;gap:2px;margin:10px 0 6px}
+.print-head b{font-family:var(--head);font-weight:500;font-size:14px}
+.tcard-sub{font-size:10px;color:var(--sub);line-height:13px;text-align:center}
+.print-scroll{overflow-y:auto;max-height:62vh}
+.print-grid{max-height:none;overflow:visible}

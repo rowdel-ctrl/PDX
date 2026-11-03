@@ -116,14 +116,27 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
             <div className="sheet-grab" />
             <div className="sheet-head"><b>{prints}</b><button className="icon-btn" onClick={() => setPrints(null)} aria-label="Close"><Close /></button></div>
             <p className="muted small" style={{ margin: '0 0 8px' }}>{prints === 'ID photos' ? 'Pick a sheet of ID photos. You can change frame sizes later.' : 'Pick a print size. One photo per page, or several on a sheet.'}</p>
-            <div className="print-grid">
-              {thumbs.map(({ t, page }, i) => (t.group === prints ? (
-                <button key={t.id} className="tcard" onClick={() => { setPrints(null); fromTemplate(i); }}>
-                  <span className="tcard-thumb"><PageThumb page={page} maxW={78} maxH={92} /></span>
-                  <span className="tcard-name">{t.name}</span>
-                </button>
-              ) : null))}
-            </div>
+            <div className="print-scroll">{(() => {
+              const inch = (v: number) => String(Math.round((v / 25.4) * 10) / 10);
+              const all = thumbs.map((x, i) => ({ ...x, i })).filter((x) => x.t.group === prints);
+              const groups: [string, string, typeof all][] = prints === 'Photo prints'
+                ? [['Same size paper', 'Print on photo paper of the same size as the name.', all.filter((x) => x.t.w !== 210)], ['Only have A4 photo paper?', 'Several photos on one A4 sheet. Cut them out after printing.', all.filter((x) => x.t.w === 210)]]
+                : [['Sheets', '', all]];
+              return groups.map(([title, hint, list]) => list.length > 0 && (
+                <div key={title}>
+                  {prints === 'Photo prints' && <div className="print-head"><b>{title}</b><span className="muted small">{hint}</span></div>}
+                  <div className="print-grid">
+                    {list.map(({ t, page, i }) => (
+                      <button key={t.id} className="tcard" onClick={() => { setPrints(null); fromTemplate(i); }}>
+                        <span className="tcard-thumb"><PageThumb page={page} maxW={78} maxH={92} /></span>
+                        <span className="tcard-name">{t.name}</span>
+                        <span className="tcard-sub">{t.w === 210 ? 'A4 paper' : `Paper ${inch(t.w)}×${inch(t.h)} in`}{page.frames.length > 1 ? ` · ${page.frames.length} photos` : ''}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ));
+            })()}</div>
           </div>
         </div>
       )}
