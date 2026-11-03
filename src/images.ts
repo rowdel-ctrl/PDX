@@ -174,3 +174,37 @@ export async function makeCutout(path: string): Promise<{ file: string; aspect: 
   c.width = c.height = 0;
   return res;
 }
+
+/** Stored size of a photo in pixels. */
+export async function pixelSize(path: string): Promise<{ w: number; h: number }> {
+  const img = await element(path);
+  return { w: img.naturalWidth, h: img.naturalHeight };
+}
+
+/** Even out the light of a photo: stretch dark and bright ends and bring the middle to a balanced level. Saves a new copy. */
+export async function evenLight(path: string): Promise<{ file: string; aspect: number }> {
+  const img = await element(path);
+  const w = img.naturalWidth, h = img.naturalHeight, png = isPng(path);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(img, 0, 0);
+  const id = ctx.getImageData(0, 0, w, h), d = id.data;
+  const hist = new Uint32Array(256); let n = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { hist[Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2])]++; n++; }
+  const pct = (q: number) => { let a = 0; for (let v = 0; v < 256; v++) { a += hist[v]; if (a >= n * q) return v; } return 255; };
+  const lo = pct(0.01), hi = Math.max(lo + 40, pct(0.99));
+  // gamma so the middle of the picture lands near 50% grey (limited, so faces do not wash out)
+  const mid = (pct(0.5) - lo) / (hi - lo);
+  const gamma = Math.min(1.6, Math.max(0.65, mid > 0.01 && mid < 0.99 ? Math.log(0.5) / Math.log(mid) : 1));
+  const lut = new Uint8ClampedArray(256);
+  for (let v = 0; v < 256; v++) lut[v] = Math.round(255 * Math.pow(Math.min(1, Math.max(0, (v - lo) / (hi - lo))), gamma));
+  for (let i = 0; i < d.length; i += 4) { d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]; }
+  ctx.putImageData(id, 0, 0);
+  const dataUrl = png ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.92);
+  c.width = c.height = 0;
+  const out = `images/${uid()}.${png ? 'png' : 'jpg'}`;
+  await Filesystem.writeFile({ path: out, data: dataUrl.split(',')[1], directory: Directory.Data, recursive: true });
+  cache.set(out, dataUrl);
+  const o = originalOf(path); if (o) rememberOrig(out, o);
+  return { file: out, aspect: w / h };
+}

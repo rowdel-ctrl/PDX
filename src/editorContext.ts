@@ -34,6 +34,8 @@ export interface Ed {
   centerFace: (frameId: string) => void;
   removeBackground: (id: string) => void;
   refineEdges: (id: string) => void;
+  evenLight: (id: string) => void;
+  setBgAll: (color: string | undefined) => void;
   setBg: (id: string, color: string | undefined) => void;
   sameAll: boolean; setSameAll: (b: boolean) => void;
   adjust: boolean; setAdjust: (b: boolean) => void;

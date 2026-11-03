@@ -343,22 +343,37 @@ export function PagePanel() {
 // ---------------------------------------------------------------- Item (crop / frame options)
 
 /** Remove background, plus the color shown behind a cut-out (for example the blue or white of an ID photo). */
+const ID_COLORS: [string, string][] = [['#FFFFFF', 'White'], ['#2F6FD6', 'Blue'], ['#C62828', 'Red'], ['#9CC4EE', 'Sky']];
+
 function BgControls({ id, file, bg }: { id: string; file: string; bg?: string }) {
   const ed = useEd();
   const cut = file.endsWith('.png');
+  const frames = ed.page.frames.filter((f) => f.file).length;
+  const [all, setAll] = useState(frames > 1);
+  const pick = (c: string | undefined) => (all && frames > 1 ? ed.setBgAll(c) : ed.setBg(id, c));
+  const custom = !!bg && !ID_COLORS.some(([c]) => c.toLowerCase() === bg.toLowerCase());
   return (
     <>
-      <button className="btn tonal" style={{ alignSelf: 'flex-start' }} onClick={() => ed.removeBackground(id)}><Wand /> {cut ? 'Remove background again' : 'Remove background'}</button>
+      <div className="row2">
+        <button className="btn tonal" onClick={() => ed.removeBackground(id)}><Wand /> {cut ? 'Remove again' : 'Remove background'}</button>
+        <button className="btn tonal" onClick={() => ed.evenLight(id)}>Even out light</button>
+      </div>
       {cut && <button className="btn tonal" style={{ alignSelf: 'flex-start' }} onClick={() => ed.refineEdges(id)}><Wand /> Refine edges</button>}
       {(cut || bg) && (
-        <div className="field">Color behind the photo
-          <div className="chips">
-            <Chip on={bg === '#FFFFFF'} onClick={() => ed.setBg(id, '#FFFFFF')}>White</Chip>
-            <Chip on={bg === '#2F6FD6'} onClick={() => ed.setBg(id, '#2F6FD6')}>ID blue</Chip>
-            <Chip on={bg === '#C62828'} onClick={() => ed.setBg(id, '#C62828')}>ID red</Chip>
-            <Chip on={!bg} onClick={() => ed.setBg(id, undefined)}>None</Chip>
+        <div className="field">Photo background
+          <div className="idcolors">
+            {ID_COLORS.map(([c, name]) => (
+              <button key={c} className={'idc' + (bg?.toLowerCase() === c.toLowerCase() ? ' on' : '')} onClick={() => pick(c)} aria-pressed={bg?.toLowerCase() === c.toLowerCase()}>
+                <span className="dot" style={{ background: c }} /><span>{name}</span>
+              </button>
+            ))}
+            <label className={'idc' + (custom ? ' on' : '')}>
+              <span className="dot plus" style={custom ? { background: bg } : undefined}>{custom ? '' : '+'}</span><span>Custom</span>
+              <input type="color" value={bg && /^#[0-9a-f]{6}$/i.test(bg) ? bg : '#ffffff'} onChange={(e) => pick(e.target.value)} />
+            </label>
           </div>
-          <Swatches label="Other color" value={bg ?? '#FFFFFF'} onChange={(c) => ed.setBg(id, c)} />
+          {frames > 1 && <Switch label="Apply to every ID frame" hint={`${frames} frames on this page`} checked={all} onChange={setAll} />}
+          <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => pick(undefined)}>No background color</button>
         </div>
       )}
     </>

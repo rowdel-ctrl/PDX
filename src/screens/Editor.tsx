@@ -3,7 +3,7 @@ import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayIte
 import { listProjects, newPage, saveProject } from '../storage';
 import { applyLayout, cellCount, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
 import { alignItems, distributeItems, findItem, gapItems, fillGrid, groupBox, mapSelected, reorder, scaleItems, selectWhere, setBoxMm, type SelectMode, type AlignMode, type AnyItem } from '../arrange';
-import { deleteImages, FULL, importImage, makeCutout, newId } from '../images';
+import { deleteImages, evenLight as evenLightFile, FULL, importImage, makeCutout, newId } from '../images';
 import RefineEdges from '../RefineEdges';
 import { faceFit, findFaces, mainFace, type Face } from '../vision';
 import { useBack } from '../back';
@@ -325,6 +325,14 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     }));
     setRefine(null);
   };
+  const evenLight = async (id: string) => {
+    const it = findItem(page, id);
+    if (!it || it.kind === 'text') return;
+    const src = (it.item as { file: string }).file; if (!src) return;
+    say('Evening out the light…');
+    try { applyRefined(id, await evenLightFile(src)); say('Done. Undo if you prefer the original.'); } catch { say('Could not change this photo.'); }
+  };
+  const setBgAll = (color: string | undefined) => editPage((pg) => ({ ...pg, frames: pg.frames.map((f) => (f.file ? { ...f, bg: color } : f)) }));
   const setBg = (id: string, color: string | undefined) => editPage((pg) => ({
     ...pg,
     images: pg.images.map((i) => (i.id === id ? { ...i, bg: color } : i)),
@@ -524,7 +532,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     addPhotos, addFromLibrary, removeFromLibrary, selTray, setSelTray, hit, setOver,
     fsize, setFsize: (w, h) => setFs({ w, h }), addFrame, fillWithFrames, clearFrames: () => { editPage((pg) => ({ ...pg, frames: [] })); setSel([]); },
     placePhoto, updateFrame: (fid, patch) => updateFrame(fid, patch), resizeFrame, rotateFrame, copyToAll,
-    detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, refineEdges, setBg,
+    detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, refineEdges, evenLight, setBgAll, setBg,
     rotateImage, setCropSide, resetCrop, fillCell, fitCell, addText, updateText, setLayout, relayout, fillWith, applyTemplate,
     deleteSel, duplicateSel, toggleLock, scaleSel, selectMany, selectBy, fillGridSel, setBox, openSheet: setSheet, align, distribute, order, setGap, selectAll, fitIntoFrame,
     addPage, dupPage, delPage, movePage, goPage, openGrid: () => setGridOpen(true),
@@ -626,7 +634,13 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         </nav>
 
         {toast && <div className="toast" role="status">{toast}</div>}
-        {exporting && <ExportSheet project={proj} onClose={() => setExporting(false)} />}
+        {exporting && <ExportSheet project={proj} onClose={() => setExporting(false)}
+          onShow={(pgIdx, id) => { setExporting(false); goPage(pgIdx); setSel([id]); }}
+          onShrink={(pgIdx, id, f) => editPage((pg) => {
+            const it = findItem(pg, id); if (!it || it.kind === 'text') return pg;
+            const b = groupBox(pg, [id]); if (!b) return pg;
+            return scaleItems(pg, [id], f, b.x, b.y, b.x + (b.w * (1 - f)) / 2, b.y + (b.h * (1 - f)) / 2);
+          }, pgIdx)} />}
         {sheet === 'fill' && <FillGridSheet onClose={() => setSheet(null)} />}
         {sheet === 'exact' && <ExactSheet onClose={() => setSheet(null)} />}
         {refine && <RefineEdges file={refine.file} bg={refine.bg} onCancel={() => setRefine(null)} onDone={(c) => applyRefined(refine.id, c)} />}

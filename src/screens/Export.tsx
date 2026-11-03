@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { findLowRes, LOW_DPI, SHARP_DPI, type LowPhoto } from '../quality';
 import type { Project, Quality } from '../types';
 import { buildPdf } from '../pdf';
 import { savePdf, sharePdf } from '../files';
@@ -8,11 +9,15 @@ import { Download, Share } from '../icons';
 const Q: [Quality, string][] = [['small', 'Small'], ['standard', 'Standard'], ['high', 'High']];
 
 /** Bottom sheet over the editor: name, quality, save or share the PDF. */
-export default function ExportSheet({ project, onClose }: { project: Project; onClose: () => void }) {
+export default function ExportSheet({ project, onClose, onShrink, onShow }: { project: Project; onClose: () => void; onShrink: (page: number, id: string, factor: number) => void; onShow: (page: number, id: string) => void }) {
   const [name, setName] = useState(project.name);
   const [quality, setQuality] = useState<Quality>('standard');
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
+  const [low, setLow] = useState<LowPhoto[]>([]);
+  const [warnOpen, setWarnOpen] = useState(true);
+  useEffect(() => { let on = true; findLowRes(project).then((l) => on && setLow(l)); return () => { on = false; }; }, [project]);
+  const shrinkable = low.filter((l) => l.kind === 'image');
   const pg = project.pages[0];
   const sizes = new Set(project.pages.map((p) => `${p.widthMm}x${p.heightMm}`));
   const sizeLabel = sizes.size > 1 ? 'Mixed sizes' : presetOf(pg.widthMm, pg.heightMm) ?? `${fmt(pg.widthMm, project.unit)}×${fmt(pg.heightMm, project.unit)} ${project.unit}`;
@@ -37,6 +42,21 @@ export default function ExportSheet({ project, onClose }: { project: Project; on
         <div className="sheet-grab" />
         <div className="sheet-head"><b>Share as PDF</b><button className="icon-btn" onClick={onClose} aria-label="Close">✕</button></div>
         <p className="muted small" style={{ margin: '0 0 4px' }}>{project.pages.length} {project.pages.length === 1 ? 'page' : 'pages'} · {sizeLabel}</p>
+        {low.length > 0 && warnOpen && (
+          <div className="lowres" role="alert">
+            <b>{low.length} {low.length === 1 ? 'photo' : 'photos'} may print blurry</b>
+            <span className="muted small">Sharp prints need about 300 dots per inch (dpi). These are below {LOW_DPI}.</span>
+            {low.slice(0, 4).map((l) => (
+              <div key={l.page + l.id} className="lowres-row">
+                <span><b>{l.label}</b><span className="muted small"> {l.dpi} dpi at {Math.round(l.wMm)} × {Math.round(l.hMm)} mm</span></span>
+                <button className="btn tonal" onClick={() => onShow(l.page, l.id)}>Show</button>
+              </div>
+            ))}
+            {low.length > 4 && <span className="muted small">and {low.length - 4} more</span>}
+            {shrinkable.length > 0 && <button className="btn tonal" onClick={() => shrinkable.forEach((l) => onShrink(l.page, l.id, Math.max(0.2, l.dpi / SHARP_DPI)))}>Shrink loose photos to sharp size</button>}
+            <button className="btn" onClick={() => setWarnOpen(false)}>Hide this</button>
+          </div>
+        )}
         <label className="field">File name
           <div className="suffix"><input value={name} onChange={(e) => setName(e.target.value)} /><span>.pdf</span></div>
         </label>
