@@ -206,3 +206,22 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
   closeScaled(doc);
   return doc.save();
 }
+
+/**
+ * Pick the number of sheets across and down so the picture fills whole sheets with as little blank paper as possible,
+ * at a poster size that is not tiny or huge. Used by "Auto fit".
+ */
+export function autoFit(aspect: number, s: TpSettings): Pick<TpSettings, 'mode' | 'cols' | 'rows' | 'fill'> {
+  let best = { cols: 2, rows: 2, score: Infinity };
+  for (let cols = 1; cols <= 8; cols++) {
+    for (let rows = 1; rows <= 8; rows++) {
+      if (cols * rows < 2) continue;
+      const p = plan(aspect, { ...s, mode: 'sheets', cols, rows, fill: false });
+      const blank = 1 - (p.img.w * p.img.h) / (p.areaW * p.areaH);
+      const size = Math.abs(Math.log(Math.max(p.img.w, p.img.h) / 700)) * 0.12;   // aim for a poster about 70 cm on its long side
+      const score = blank + size + (cols * rows) * 0.004;
+      if (score < best.score) best = { cols, rows, score };
+    }
+  }
+  return { mode: 'sheets', cols: best.cols, rows: best.rows, fill: false };
+}

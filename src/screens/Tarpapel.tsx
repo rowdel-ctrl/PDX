@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Banner } from '../notify';
-import { buildTarpapelPdf, dpi, MAX_SHEETS, pageCount, plan, type Orient, type TpSettings } from '../tarpapel';
+import { autoFit, buildTarpapelPdf, dpi, MAX_SHEETS, pageCount, plan, type Orient, type TpSettings } from '../tarpapel';
 import { loadPhoto, openPdf, type Source } from '../pdfsource';
 import { savePdf, sharePdf } from '../files';
 import { PRESETS } from '../units';
@@ -61,6 +61,12 @@ export default function Tarpapel({ onBack }: { onBack: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   useBack(onBack);
   const set = (p: Partial<TpSettings>) => setS((o) => ({ ...o, ...p }));
+  // Auto fit: choose the sheet grid that suits the picture. Any manual size change turns it off.
+  const [auto, setAuto] = useState(true);
+  const manual = (p: Partial<TpSettings>) => { setAuto(false); set(p); };
+  useEffect(() => {
+    if (auto && src) setS((o) => ({ ...o, ...autoFit(src.aspect, o) }));
+  }, [auto, src?.aspect, s.paperW, s.paperH, s.orient, s.margin, s.join, s.overlap, s.cutLines]);
 
   const pickFile = async (f: File | undefined) => {
     if (!f) return;
@@ -157,21 +163,22 @@ export default function Tarpapel({ onBack }: { onBack: () => void }) {
 
             <section className="tp-card">
               <div className="tp-head"><h3>Size</h3>
-                <Segmented value={s.mode} onChange={(m) => set(m === 'size' ? { mode: 'size', widthMm: Math.max(50, p.img.w) } : { mode: 'sheets', cols: p.cols, rows: p.rows })} options={[['size', 'Exact size'], ['sheets', 'Sheets']]} />
+                <Segmented value={s.mode} onChange={(m) => manual(m === 'size' ? { mode: 'size', widthMm: Math.max(50, p.img.w) } : { mode: 'sheets', cols: p.cols, rows: p.rows })} options={[['size', 'Exact size'], ['sheets', 'Sheets']]} />
               </div>
+              <Switch label="Auto fit" hint={auto ? `Picked ${p.cols} × ${p.rows} sheets to fit your picture` : 'Off: you choose the size'} checked={auto} onChange={(b) => { setAuto(b); if (b && src) set(autoFit(src.aspect, s)); }} />
               {s.mode === 'size' ? (
                 <div className="row">
-                  <NumField label="Width" mm={p.img.w} unit={unit} onCommit={(mm) => set({ widthMm: mm })} />
-                  <NumField label="Height" mm={p.img.h} unit={unit} onCommit={(mm) => set({ widthMm: mm * src.aspect })} />
+                  <NumField label="Width" mm={p.img.w} unit={unit} onCommit={(mm) => manual({ widthMm: mm })} />
+                  <NumField label="Height" mm={p.img.h} unit={unit} onCommit={(mm) => manual({ widthMm: mm * src.aspect })} />
                   <Segmented<U> value={unit} onChange={setUnit} options={[['mm', 'mm'], ['cm', 'cm'], ['in', 'in'], ['ft', 'ft']]} />
                 </div>
               ) : (
                 <>
                   <div className="row">
-                    <Stepper label="Sheets across" value={s.cols} onChange={(n) => set({ cols: n })} />
-                    <Stepper label="Sheets down" value={s.rows} onChange={(n) => set({ rows: n })} />
+                    <Stepper label="Sheets across" value={s.cols} onChange={(n) => manual({ cols: n })} />
+                    <Stepper label="Sheets down" value={s.rows} onChange={(n) => manual({ rows: n })} />
                   </div>
-                  <Switch label="Fill the sheets" hint="Crops the photo edges instead of fitting it" checked={s.fill} onChange={(b) => set({ fill: b })} />
+                  <Switch label="Fill the sheets" hint="Crops the photo edges instead of fitting it" checked={s.fill} onChange={(b) => manual({ fill: b })} />
                 </>
               )}
             </section>
