@@ -5,7 +5,7 @@ import { fmt, presetOf } from '../units';
 import PageThumb from '../PageThumb';
 import { Moon, Plus, Sun, Trash, Edit } from '../icons';
 
-export default function Projects({ onOpen }: { onOpen: (id: string) => void }) {
+export default function Projects({ onOpen, onPoster }: { onOpen: (id: string) => void; onPoster: () => void }) {
   const [list, setList] = useState(listProjects);
   const [dark, setDark] = useState(document.documentElement.dataset.theme === 'dark');
   const [menu, setMenu] = useState<string | null>(null);
@@ -68,7 +68,8 @@ export default function Projects({ onOpen }: { onOpen: (id: string) => void }) {
           })}
         </div>
       </main>
-      <footer className="footbar"><button className="btn primary wide" onClick={create}><Plus /> New project</button></footer>
+      <footer className="footbar"><button className="btn" onClick={onPoster}>Tarpapel poster</button>
+        <button className="btn primary" onClick={create}><Plus /> New project</button></footer>
     </div>
   );
 }
