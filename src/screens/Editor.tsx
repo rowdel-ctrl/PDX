@@ -3,7 +3,7 @@ import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayIte
 import { listProjects, newPage, saveProject } from '../storage';
 import { applyLayout, cellCount, gridBox, LAYOUTS, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
 import { alignItems, distributeItems, findItem, gapItems, fillGrid, groupBox, mapSelected, reorder, scaleItems, selectWhere, setBoxMm, type SelectMode, type AlignMode, type AnyItem } from '../arrange';
-import { deleteImages, evenLight as evenLightFile, FULL, importImage, makeCutout, newId } from '../images';
+import { deleteImages, enhanceFile, evenLight as evenLightFile, FULL, importImage, makeCutout, newId, upscaleFile } from '../images';
 import RefineEdges from '../RefineEdges';
 import { faceFit, findFaces, mainFace, type Face } from '../vision';
 import { useBack } from '../back';
@@ -15,19 +15,19 @@ import PageGrid from '../PageGrid';
 import ExportSheet from './Export';
 import { FloatingToolbar } from '../Toolbar';
 import SettingsSheet from '../SettingsSheet';
-import { ArrangePanel, ColorPanel, CopiesPanel, CutoutPanel, SelectPanel, SizePanel } from '../toolpanels';
+import { ArrangePanel, ColorPanel, CopiesPanel, CutoutPanel, EnhancePanel, SelectPanel, SizePanel } from '../toolpanels';
 import { AddPanel, ItemPanel, LayoutPanel, PagePanel, TextPanel } from '../panels';
 import { EdCtx, type AddTab, type Ed, type PanelId } from '../editorContext';
 import { TEMPLATES, type Template } from '../templates';
 import PageThumb from '../PageThumb';
 import { presetOf } from '../units';
-import { Back, Checklist, Close, Copy, Crop as CropIcon, Edit, Hand, Grid, Layers, Palette, Plus, Redo, Share, Size, Tune, Type, Undo, Wand, Image as ImageIcon } from '../icons';
+import { Back, Checklist, Close, Copy, Crop as CropIcon, Edit, Hand, Grid, Layers, Palette, Plus, Redo, Share, Size, Sparkle, Tune, Type, Undo, Wand, Image as ImageIcon } from '../icons';
 
 export type Tab = PanelId;
 const NAV: [PanelId, string, () => React.ReactElement][] = [
   ['add', 'Add', Plus], ['layout', 'Layout', Grid], ['text', 'Text', Type], ['page', 'Page', Tune], ['select', 'Select', Checklist],
 ];
-const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Layout', text: 'Text', page: 'Page', item: 'Crop', cutout: 'Cut out', color: 'Background color', arrange: 'Arrange', copies: 'Copies', select: 'Select', size: 'Group size' };
+const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Layout', text: 'Text', page: 'Page', item: 'Crop', cutout: 'Cut out', color: 'Background color', arrange: 'Arrange', copies: 'Copies', select: 'Select', size: 'Group size', enhance: 'Enhance' };
 
 const filesOf = (p: Project) => new Set([
   ...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]),
@@ -405,6 +405,20 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     say('Evening out the light…');
     try { applyRefined(id, await evenLightFile(src)); say('Done. Undo if you prefer the original.'); } catch { say('Could not change this photo.'); }
   };
+  const enhancePhoto = async (id: string, a: import('../enhance').Adjust): Promise<boolean> => {
+    const it = findItem(page, id);
+    if (!it || it.kind === 'text') return false;
+    const src = (it.item as { file: string }).file; if (!src) return false;
+    try { applyRefined(id, await enhanceFile(src, a)); say('Photo enhanced. Undo if you prefer the original.'); return true; }
+    catch (e) { console.error(e); say('Could not enhance this photo.'); return false; }
+  };
+  const upscalePhoto = async (id: string, onProgress: (p: number) => void, signal: AbortSignal): Promise<boolean> => {
+    const it = findItem(page, id);
+    if (!it || it.kind === 'text') return false;
+    const src = (it.item as { file: string }).file; if (!src) return false;
+    try { applyRefined(id, await upscaleFile(src, onProgress, signal)); say('Photo upscaled 2×. Undo if you prefer the original.'); return true; }
+    catch (e) { if (!signal.aborted) { console.error(e); say('Could not upscale this photo.'); } return false; }
+  };
   const setBgAll = (color: string | undefined) => editPage((pg) => ({ ...pg, frames: pg.frames.map((f) => (f.file ? { ...f, bg: color } : f)) }));
   const setBg = (id: string, color: string | undefined) => editPage((pg) => ({
     ...pg,
@@ -629,7 +643,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     addPhotos, addFromLibrary, removeFromLibrary, selTray, setSelTray, hit, setOver,
     fsize, setFsize: (w, h) => setFs({ w, h }), addFrame, fillWithFrames, clearFrames: () => { editPage((pg) => ({ ...pg, frames: [] })); setSel([]); },
     placePhoto, updateFrame: (fid, patch) => updateFrame(fid, patch), resizeFrame, rotateFrame, copyToAll,
-    detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, refineEdges, evenLight, setBgAll, setBg,
+    detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, refineEdges, evenLight, enhancePhoto, upscalePhoto, setBgAll, setBg,
     rotateImage, setCropSide, resetCrop, fillCell, fitCell, addText, updateText, setLayout, relayout, fillWith, applyTemplate,
     deleteSel, duplicateSel, toggleLock, scaleSel, selectMany, selectBy, fillGridSel, setBox, setSel, openPrinter: () => setPrinterOpen(true), align, distribute, order, setGap, selectAll, fitIntoFrame,
     addPage, dupPage, delPage, movePage, goPage, openGrid: () => setGridOpen(true),
@@ -641,7 +655,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   useEffect(() => { setMulti(panel === 'select'); }, [panel]);
   // item panels close when nothing is selected any more
   useEffect(() => {
-    if (!selIds.length && panel && ['item', 'cutout', 'color', 'arrange', 'copies', 'size'].includes(panel)) setPanel(null);
+    if (!selIds.length && panel && ['item', 'cutout', 'enhance', 'color', 'arrange', 'copies', 'size'].includes(panel)) setPanel(null);
   }, [selIds.length, panel]);
   type CtxTool = { id: string; label: string; icon: () => React.ReactElement; on: () => void; active?: boolean };
   const T = (id: PanelId, label: string, icon: () => React.ReactElement): CtxTool => ({ id, label, icon, active: panel === id, on: () => toggleNav(id) });
@@ -649,8 +663,8 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     if (!selIds.length || adjust) return null;
     const more = [T('arrange', 'Arrange', Layers), T('copies', 'Copies', Copy), T('select', 'Select', Checklist)];
     if (selIds.length > 1) return [T('arrange', 'Arrange', Layers), T('size', 'Group size', Size), T('copies', 'Copies', Copy), T('select', 'Select', Checklist)];
-    if (selImage) return [T('item', 'Crop', CropIcon), T('cutout', 'Cut out', Wand), T('color', 'Color', Palette), ...more];
-    if (selFrame?.file) return [{ id: 'crop', label: 'Crop', icon: CropIcon, on: () => { setPanel(null); setAdjust(true); } }, T('cutout', 'Cut out', Wand), T('color', 'Color', Palette), ...more];
+    if (selImage) return [T('item', 'Crop', CropIcon), T('cutout', 'Cut out', Wand), T('enhance', 'Enhance', Sparkle), T('color', 'Color', Palette), ...more];
+    if (selFrame?.file) return [{ id: 'crop', label: 'Crop', icon: CropIcon, on: () => { setPanel(null); setAdjust(true); } }, T('cutout', 'Cut out', Wand), T('enhance', 'Enhance', Sparkle), T('color', 'Color', Palette), ...more];
     if (selFrame) return [{ id: 'add', label: 'Add photo', icon: ImageIcon, active: panel === 'add', on: () => { setAddTab('photos'); toggleNav('add'); } }, T('item', 'Frame', Tune), ...more];
     if (selText) return [T('text', 'Edit text', Edit), ...more];
     return null;
@@ -718,6 +732,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
             {shownPanel === 'page' && <PagePanel />}
             {shownPanel === 'item' && <ItemPanel />}
             {shownPanel === 'cutout' && <CutoutPanel />}
+            {shownPanel === 'enhance' && <EnhancePanel />}
             {shownPanel === 'color' && <ColorPanel />}
             {shownPanel === 'arrange' && <ArrangePanel />}
             {shownPanel === 'copies' && <CopiesPanel />}

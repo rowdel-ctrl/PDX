@@ -3,7 +3,7 @@ import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayIte
 import type { AlignMode, SelectMode } from './arrange';
 import type { Template } from './templates';
 
-export type PanelId = 'add' | 'layout' | 'text' | 'page' | 'item' | 'cutout' | 'color' | 'arrange' | 'copies' | 'select' | 'size';
+export type PanelId = 'add' | 'layout' | 'text' | 'page' | 'item' | 'cutout' | 'color' | 'arrange' | 'copies' | 'select' | 'size' | 'enhance';
 export type AddTab = 'photos' | 'frames' | 'templates';
 
 export interface Ed {
@@ -35,6 +35,8 @@ export interface Ed {
   removeBackground: (id: string) => void;
   refineEdges: (id: string) => void;
   evenLight: (id: string) => void;
+  enhancePhoto: (id: string, a: import('./enhance').Adjust) => Promise<boolean>;
+  upscalePhoto: (id: string, onProgress: (p: number) => void, signal: AbortSignal) => Promise<boolean>;
   setBgAll: (color: string | undefined) => void;
   setBg: (id: string, color: string | undefined) => void;
   sameAll: boolean; setSameAll: (b: boolean) => void;

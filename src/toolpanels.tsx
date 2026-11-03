@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEd } from './editorContext';
 import { ExactForm, FillForm } from './sheets';
 import { SliderRow, Switch } from './ui';
 import { fmt } from './units';
-import { AlignB, AlignC, AlignL, AlignM, AlignR, AlignT, Copy, DistH, DistV, Face, Layers, Wand } from './icons';
+import { enhancePreview, pixelSize } from './images';
+import { AUTO, NEUTRAL, isNeutral, type Adjust } from './enhance';
+import { canUpscale } from './upscale';
+import { frameCrop } from './layout';
+import { AlignB, AlignC, AlignL, AlignM, AlignR, AlignT, Copy, DistH, DistV, Face, Layers, Sparkle, Wand } from './icons';
 
 export const ID_COLORS: [string, string][] = [['#FFFFFF', 'White'], ['#2F6FD6', 'Blue'], ['#C62828', 'Red'], ['#9CC4EE', 'Sky']];
 
@@ -166,6 +170,66 @@ export function SizePanel() {
         <button className="btn tonal" onClick={() => ed.scaleSel(1 / 1.1)}>Smaller −10%</button>
         <button className="btn tonal" onClick={() => ed.scaleSel(1.1)}>Bigger +10%</button>
       </div>
+    </div>
+  );
+}
+
+/** Make a photo look better: light, colour, sharpness, noise. Upscale 2× for photos that are too small to print sharp. */
+export function EnhancePanel() {
+  const { ed, t, id, file } = useTarget();
+  const [adj, setAdj] = useState<Adjust>(NEUTRAL);
+  const [preview, setPreview] = useState('');
+  const [busy, setBusy] = useState('');
+  const [px, setPx] = useState<{ w: number; h: number } | null>(null);
+  const abort = useRef<AbortController | null>(null);
+  useEffect(() => { setAdj(NEUTRAL); setPreview(''); abort.current?.abort(); }, [file]);
+  useEffect(() => { if (file) pixelSize(file).then(setPx).catch(() => setPx(null)); }, [file]);
+  useEffect(() => {
+    if (!file) return;
+    let on = true;
+    const h = setTimeout(() => { enhancePreview(file, adj).then((u) => on && setPreview(u)).catch(() => {}); }, 160);
+    return () => { on = false; clearTimeout(h); };
+  }, [file, adj]);
+  if (!t) return <div className="panel-body"><p className="muted small" style={{ margin: 0 }}>Select a photo to enhance it.</p></div>;
+  const set = (p: Partial<Adjust>) => setAdj((a) => ({ ...a, ...p }));
+  // print sharpness of this photo at the size it is placed
+  const widthMm = ed.page.widthMm * t.w, crop = 'crop' in t ? t.crop : frameCrop(t as import('./types').Frame, ed.page.widthMm, ed.page.heightMm);
+  const pxAcross = px ? ((t.rot % 2 ? px.h : px.w) * crop.w) : 0;
+  const dpi = widthMm > 0 ? Math.round(pxAcross / (widthMm / 25.4)) : 0;
+  const can = px ? canUpscale(px.w, px.h) : false;
+
+  const apply = async () => { setBusy('Enhancing…'); await ed.enhancePhoto(id, adj); setBusy(''); };
+  const upscale = async () => {
+    const c = new AbortController(); abort.current = c;
+    setBusy('Upscaling… 0%');
+    const ok = await ed.upscalePhoto(id, (p) => setBusy(`Upscaling… ${Math.round(p * 100)}%`), c.signal);
+    abort.current = null; setBusy(''); if (!ok) return;
+  };
+  return (
+    <div className="panel-body">
+      <div className="enh-top">
+        {preview && <img className="enh-prev" src={preview} alt="Preview of the enhanced photo" />}
+        <div className="enh-btns">
+          <button className="btn tonal" disabled={!!busy} onClick={() => setAdj(AUTO)}><Sparkle /> Auto enhance</button>
+          <button className="btn" disabled={!!busy || isNeutral(adj)} onClick={() => setAdj(NEUTRAL)}>Reset</button>
+          <button className="btn primary" disabled={!!busy || isNeutral(adj)} onClick={apply}>Apply</button>
+        </div>
+      </div>
+      <SliderRow label="Brightness" value={adj.brightness} min={-100} max={100} suffix={String(adj.brightness)} onChange={(v) => set({ brightness: v })} />
+      <SliderRow label="Contrast" value={adj.contrast} min={-100} max={100} suffix={String(adj.contrast)} onChange={(v) => set({ contrast: v })} />
+      <SliderRow label="Colour" value={adj.saturation} min={-100} max={100} suffix={String(adj.saturation)} onChange={(v) => set({ saturation: v })} />
+      <SliderRow label="Warmth" value={adj.warmth} min={-100} max={100} suffix={String(adj.warmth)} onChange={(v) => set({ warmth: v })} />
+      <SliderRow label="Sharpen" value={adj.sharpen} min={0} max={100} suffix={String(adj.sharpen)} onChange={(v) => set({ sharpen: v })} />
+      <SliderRow label="Noise cleanup" value={adj.denoise} min={0} max={100} suffix={String(adj.denoise)} onChange={(v) => set({ denoise: v })} />
+      <div className="field">Too small to print sharp?
+        <span className="muted small">{px ? `This photo is ${px.w} × ${px.h} px, about ${dpi} dpi at its size on the page. Sharp prints need about 300.` : ''}</span>
+        <button className="btn tonal" disabled={!!busy || !can} onClick={upscale}>Upscale 2× (AI)</button>
+        <span className="muted small">{can ? 'Doubles the width and height on your phone. It can take a minute for bigger photos, and works best on photos under about 1500 px.' : 'This photo is already large, so it can not be upscaled.'}</span>
+      </div>
+      {busy && (
+        <div className="banner busy"><span className="toast-ic" aria-hidden="true"><span className="spin" /></span><span className="toast-tx">{busy}</span>
+          {abort.current && <button className="btn" onClick={() => abort.current?.abort()}>Cancel</button>}</div>
+      )}
     </div>
   );
 }

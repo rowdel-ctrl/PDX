@@ -96,7 +96,7 @@ export async function deleteImages(paths: string[]) {
 const QUALITY: Record<Quality, { px: number; q: number }> = {
   small: { px: 1000, q: 0.6 },
   standard: { px: 1800, q: 0.8 },
-  high: { px: MAX_STORE_PX, q: 0.92 },
+  high: { px: 6000, q: 0.92 },
 };
 
 /** Image bytes for the PDF at the chosen quality (PNG for cut-outs so they keep their transparency). */
@@ -207,4 +207,56 @@ export async function evenLight(path: string): Promise<{ file: string; aspect: n
   cache.set(out, dataUrl);
   const o = originalOf(path); if (o) rememberOrig(out, o);
   return { file: out, aspect: w / h };
+}
+
+// ---------------------------------------------------------------- enhance and upscale
+function adjustedCanvas(img: HTMLImageElement, a: import('./enhance').Adjust, maxPx: number, adjust: (d: ImageData, a: import('./enhance').Adjust) => void): HTMLCanvasElement {
+  const k = Math.min(1, maxPx / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  const id = ctx.getImageData(0, 0, c.width, c.height);
+  adjust(id, a);
+  ctx.putImageData(id, 0, 0);
+  return c;
+}
+
+/** Small preview of a photo with the adjustments applied (a data URL). */
+export async function enhancePreview(path: string, a: import('./enhance').Adjust, maxPx = 520): Promise<string> {
+  const { adjustPixels } = await import('./enhance');
+  const c = adjustedCanvas(await element(path), a, maxPx, adjustPixels);
+  const url = c.toDataURL('image/jpeg', 0.85);
+  c.width = c.height = 0;
+  return url;
+}
+
+async function saveEdited(c: HTMLCanvasElement, from: string, png: boolean): Promise<{ file: string; aspect: number }> {
+  const dataUrl = png ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.92);
+  const aspect = c.width / c.height;
+  const out = `images/${uid()}.${png ? 'png' : 'jpg'}`;
+  await Filesystem.writeFile({ path: out, data: dataUrl.split(',')[1], directory: Directory.Data, recursive: true });
+  cache.set(out, dataUrl);
+  const o = originalOf(from); if (o) rememberOrig(out, o);
+  return { file: out, aspect };
+}
+
+/** Apply the adjustments to the full photo and save a new copy. */
+export async function enhanceFile(path: string, a: import('./enhance').Adjust): Promise<{ file: string; aspect: number }> {
+  const { adjustPixels } = await import('./enhance');
+  const img = await element(path);
+  const c = adjustedCanvas(img, a, 9000, adjustPixels);
+  const r = await saveEdited(c, path, isPng(path));
+  c.width = c.height = 0;
+  return r;
+}
+
+/** Make a photo twice as wide and tall with an AI model that runs on this phone. */
+export async function upscaleFile(path: string, onProgress?: (p: number) => void, signal?: AbortSignal): Promise<{ file: string; aspect: number }> {
+  const { upscaleImage } = await import('./upscale');
+  const png = isPng(path);
+  const c = await upscaleImage(await element(path), png, onProgress, signal);
+  const r = await saveEdited(c, path, png);
+  c.width = c.height = 0;
+  return r;
 }

@@ -374,3 +374,8 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .tcard-sub{font-size:10px;color:var(--sub);line-height:13px;text-align:center}
 .print-scroll{overflow-y:auto;max-height:62vh}
 .print-grid{max-height:none;overflow:visible}
+
+.enh-top{display:flex;gap:12px;align-items:center}
+.enh-prev{width:104px;height:104px;object-fit:contain;border-radius:12px;background:rgba(15,17,21,.06);flex:none}
+.enh-btns{display:flex;flex-direction:column;gap:8px;flex:1}
+.enh-btns .btn{width:100%}

@@ -20,13 +20,16 @@
     "@fontsource/poppins": "^5.3.0",
     "@fontsource/roboto": "^5.3.0",
     "@mediapipe/tasks-vision": "^1.2.0",
+    "@tensorflow/tfjs": "^4.11.0",
+    "@upscalerjs/esrgan-slim": "^1.0.0",
     "konva": "^10.9.1",
     "onnxruntime-web": "^1.31.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-konva": "^19.3.2"
+    "react-konva": "^19.3.2",
+    "upscaler": "^1.0.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.0",

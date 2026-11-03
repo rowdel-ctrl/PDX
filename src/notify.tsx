@@ -5,7 +5,7 @@ export type ToastKind = 'ok' | 'warn' | 'busy';
 
 /** Work out what a message is about so it can be shown the right way. */
 export const kindOf = (m: string): ToastKind =>
-  /…$|\.\.\.$/.test(m) ? 'busy' : /could not|couldn't|failed|nothing to|needs at least|add a frame first|not available|error/i.test(m) ? 'warn' : 'ok';
+  /…|\.\.\./.test(m) ? 'busy' : /could not|couldn't|failed|nothing to|needs at least|add a frame first|not available|error/i.test(m) ? 'warn' : 'ok';
 
 const Warn = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 7v6M12 17h.01" /></svg>;
 
