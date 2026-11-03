@@ -109,7 +109,6 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
   const image = await doc.embedJpg(jpeg);
   const SW = mmToPt(p.sheetW), SH = mmToPt(p.sheetH);
   const m = s.margin, o = p.overlap, overlap = s.join === 'overlap';
-  const tick = Math.min(4, m - 0.8);
   const X = mmToPt, Y = (y: number) => SH - mmToPt(y);
 
   if (s.guidePage) {
@@ -120,15 +119,13 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
     text(`${name}  ·  Poster ${Math.round(p.img.w) / 10} × ${Math.round(p.img.h) / 10} cm  ·  ${p.count} sheets (${p.cols} × ${p.rows})  ·  ${overlap ? 'overlap and glue' : 'trim and tape'}`, pad, pad + base * 1.5, base * 0.9, font, GRAY);
     // steps (measured first so the map can use the space that is left)
     const steps = overlap ? [
-      'Print every page at 100% ("Actual size"). Do not choose "Fit to page".',
-      `Cut along the dashed lines (the scissors show where each line starts). On every sheet cut the left and top edges. Also cut the bottom edge in the last row and the right edge in the last column.`,
-      'Start with sheet 1. Put glue along the right edge of its picture, the strip named GLUE in the border. Lay sheet 2 on top and line up the picture. Repeat along the row.',
-      'Build the next row the same way. Put glue along the bottom edge of the picture in the row above (the strip named GLUE in the border) and lay the new row on top.',
+      'Print every page at 100% ("Actual size").',
+      'Cut along the dashed lines: the left and top of every sheet, plus the bottom of the last row and the right of the last column.',
+      'Go in number order. Glue the strip marked GLUE, lay the next sheet on top and line up the picture. Finish a row, then the next.',
     ] : [
-      'Print every page at 100% ("Actual size"). Do not choose "Fit to page".',
+      'Print every page at 100% ("Actual size").',
       'Cut along the dashed lines on all four sides of every sheet.',
-      'Lay the sheets out in order, edge to edge, and line up the picture.',
-      'Tape the seams on the back. Join each row first, then tape the rows together.',
+      'Lay the sheets in number order, edge to edge, and tape the seams on the back.',
     ];
     const textW = p.sheetW - 2 * pad - 8;
     const stepLines = steps.map((t) => wrap(t, font, base, X(textW)));
@@ -139,10 +136,6 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
     const mx = pad + (mapW - p.areaW * k) / 2, my = pad + base * 3.2;
     // outline of the whole poster, and the strips that overlap (outlined, not filled)
     pg.drawRectangle({ x: X(mx + p.img.x * k), y: Y(my + (p.img.y + p.img.h) * k), width: X(p.img.w * k), height: X(p.img.h * k), borderColor: HATCH, borderWidth: 0.5 });
-    if (overlap && o > 0) {
-      for (let c = 1; c < p.cols; c++) pg.drawRectangle({ x: X(mx + c * p.stepX * k), y: Y(my + p.areaH * k), width: X(o * k), height: X(p.areaH * k), borderColor: HATCH, borderWidth: 0.4, borderDashArray: [2, 2] });
-      for (let r = 1; r < p.rows; r++) pg.drawRectangle({ x: X(mx), y: Y(my + r * p.stepY * k + o * k), width: X(p.areaW * k), height: X(o * k), borderColor: HATCH, borderWidth: 0.4, borderDashArray: [2, 2] });
-    }
     const fs = Math.max(10, Math.min(34, Math.min(p.cw, p.ch) * k * 1.3));
     for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) {
       const tx = mx + c * p.stepX * k, ty = my + r * p.stepY * k, tw = p.cw * k, th = p.ch * k;
@@ -155,8 +148,7 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
     const sw = bold.widthOfTextAtSize('START HERE', 7) + 10;
     pg.drawRectangle({ x: X(mx + 2), y: Y(my + 2) - 12, width: sw, height: 12, borderColor: LINE, borderWidth: 0.8 });
     pg.drawText('START HERE', { x: X(mx + 2) + 5, y: Y(my + 2) - 9, size: 7, font: bold, color: INK });
-    text('Sheets are numbered left to right, top to bottom.', mx, my + p.areaH * k + 2, base * 0.8, font, GRAY);
-    let y = my + p.areaH * k + base * 2.4;
+    let y = my + p.areaH * k + base * 1.6;
     steps.forEach((t, i) => {
       pg.drawCircle({ x: X(pad + 2.5), y: Y(y + 2.2), size: X(2.6), borderColor: LINE, borderWidth: 0.8 });
       pg.drawText(String(i + 1), { x: X(pad + 2.5) - 2.2, y: Y(y + 2.2) - 3, size: 8, font: bold, color: INK });
@@ -164,12 +156,6 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
       lines.forEach((ln, j) => pg.drawText(ln, { x: X(pad + 8), y: Y(y + j * base * 0.5 + 1) - base, size: base, font, color: INK }));
       y += Math.max(6, lines.length * base * 0.5) + base * 0.5;
     });
-    // legend
-    const ly = p.sheetH - pad - 4;
-    pg.drawLine({ start: { x: X(pad), y: Y(ly) }, end: { x: X(pad + 14), y: Y(ly) }, thickness: 0.9, color: LINE, dashArray: [4, 2.5] });
-    text('Cut line', pad + 16, ly - 1.6, base * 0.8, font, GRAY);
-    if (overlap) { pg.drawRectangle({ x: X(pad + 38), y: Y(ly + 1.5), width: X(10), height: X(3), borderColor: HATCH, borderWidth: 0.4, borderDashArray: [1.5, 1.5] }); text('Glue strip (named in the border)', pad + 50, ly - 1.6, base * 0.8, font, GRAY); }
-    text('Made with PDX', p.sheetW - pad - 22, ly - 1.6, base * 0.8, font, GRAY);
   }
 
   for (let r = 0; r < p.rows; r++) {
@@ -183,14 +169,14 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
 
       // glue strips: the next sheet to the right / below goes on top of the picture edge. Marked in the border only, never on the picture.
       if (overlap && s.glueShade && o > 0 && m >= 4.5) {
-        const sz = 5.5, tx = `GLUE strip: ${Math.round(o * 10) / 10} mm, on the picture edge beside this border`;
+        const sz = 5.5, tx = `GLUE ${Math.round(o * 10) / 10} mm`;
         const tw = bold.widthOfTextAtSize(tx, sz);
-        if (c < p.cols - 1 && p.ch > 130) {
+        if (c < p.cols - 1 && p.ch > 60) {
           // right border (stays under the next sheet): rotated text, plus a short bracket that shows the strip width on the border's top edge
-          page.drawText(tx, { x: X(m + p.cw + m / 2) + sz * 0.35, y: Y(m + p.ch - 6), size: sz, font: bold, color: INK, rotate: degrees(90) });
+          page.drawText(tx, { x: X(m + p.cw + m / 2) + sz * 0.35, y: Y(m + p.ch * 0.25), size: sz, font: bold, color: INK, rotate: degrees(90) });
         }
-        if (r < p.rows - 1 && p.cw > 150) {
-          page.drawText(tx, { x: X(m + 72), y: Y(m + p.ch + m / 2) - sz * 0.35, size: sz, font: bold, color: INK });
+        if (r < p.rows - 1 && p.cw > 100) {
+          page.drawText(tx, { x: X(m + p.cw - 30 - 24), y: Y(m + p.ch + m / 2) - sz * 0.35, size: sz, font: bold, color: INK });
         }
       }
 
@@ -205,28 +191,11 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
         page.drawLine({ start: { x: X(x0), y: Y(y0) }, end: { x: X(x1), y: Y(y0) }, ...dash });
         scissors(page, SH, m / 2, y0 + offY, 90, k);
         scissors(page, SH, x0 + offX, m / 2, 0, k);
-        if (cutRight) { page.drawLine({ start: { x: X(x1), y: Y(y0) }, end: { x: X(x1), y: Y(y1) }, ...dash }); scissors(page, SH, x1 + m / 2, y1 - offY, 270, k); }
-        if (cutBottom) { page.drawLine({ start: { x: X(x0), y: Y(y1) }, end: { x: X(x1), y: Y(y1) }, ...dash }); scissors(page, SH, x1 - offX, y1 + m / 2, 180, k); }
-
-        // which sheet goes where: small text in the border, so it never lands on the picture
-        const n = (rr: number, cc: number) => rr * p.cols + cc + 1;
-        const sz = 5.5;
-        if (r > 0) { const t = `Above: sheet ${n(r - 1, c)}`; page.drawText(t, { x: X(m + p.cw / 2) - font.widthOfTextAtSize(t, sz) / 2, y: Y(m / 2) - sz * 0.35, size: sz, font, color: INK }); }
-        if (c > 0) { const t = `Left: sheet ${n(r, c - 1)}`; page.drawText(t, { x: X(m / 2) + sz * 0.35, y: Y(m + p.ch / 2) - font.widthOfTextAtSize(t, sz) / 2, size: sz, font, color: INK, rotate: degrees(90) }); }
-        if (c < p.cols - 1) { const t = `Right: sheet ${n(r, c + 1)}`; page.drawText(t, { x: X(m + p.cw + m / 2) + sz * 0.35, y: Y(m + p.ch / 2) - font.widthOfTextAtSize(t, sz) / 2, size: sz, font, color: INK, rotate: degrees(90) }); }
-        if (r < p.rows - 1) { const t = `Below: sheet ${n(r + 1, c)}`; page.drawText(t, { x: X(m + p.cw) - font.widthOfTextAtSize(t, sz), y: Y(m + p.ch + m / 2) - sz * 0.35, size: sz, font, color: INK }); }
+        if (cutRight) page.drawLine({ start: { x: X(x1), y: Y(y0) }, end: { x: X(x1), y: Y(y1) }, ...dash });
+        if (cutBottom) page.drawLine({ start: { x: X(x0), y: Y(y1) }, end: { x: X(x1), y: Y(y1) }, ...dash });
       }
 
-      // corner marks in the unprintable border
-      if (tick > 0.5) {
-        for (const x of [m, m + p.cw]) for (const y of [m, m + p.ch]) {
-          const px = X(x), py = Y(y);
-          const dx = x === m ? -1 : 1, dy = y === m ? 1 : -1; // outward
-          page.drawLine({ start: { x: px + dx * X(0.8), y: py }, end: { x: px + dx * X(0.8 + tick), y: py }, thickness: 0.4, color: GRAY });
-          page.drawLine({ start: { x: px, y: py + dy * X(0.8) }, end: { x: px, y: py + dy * X(0.8 + tick) }, thickness: 0.4, color: GRAY });
-        }
-      }
-      if (m >= 4) page.drawText(`${name}  ·  Row ${r + 1}, Col ${c + 1}  ·  Sheet ${r * p.cols + c + 1} of ${p.count}`, { x: X(m), y: X(1.6), size: 6, font, color: GRAY });
+      if (m >= 4) page.drawText(`Sheet ${r * p.cols + c + 1} of ${p.count}  ·  Row ${r + 1}, Col ${c + 1}`, { x: X(m), y: X(1.6), size: 6, font, color: GRAY });
     }
   }
   doc.setTitle(name);
