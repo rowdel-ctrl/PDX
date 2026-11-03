@@ -17,6 +17,14 @@ android {
         }
     }
     signingConfigs {
+        debug {
+            // Fixed key kept in the repo so every build can update the previous install.
+            // Fine for sideloading; not secret, so don't use it for the Play Store.
+            storeFile file('pdx-debug.keystore')
+            storePassword 'android'
+            keyAlias 'pdx'
+            keyPassword 'android'
+        }
         release {
             // Provided by CI from GitHub Secrets. Without them the release build is unsigned.
             def ks = System.getenv("KEYSTORE_PATH")
