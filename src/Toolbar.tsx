@@ -42,7 +42,9 @@ export function FloatingToolbar({ box, onPosition }: { box: SelBox; onPosition: 
   const cx = Math.min(parentW - half - 8, Math.max(half + 8, box.x + box.w / 2));
   const above = box.y - 84;           // leaves room for the rotate handle
   const top = above < 6 ? Math.min(box.y + box.h + 18, 9999) : above;
-  const menuBelow = top < box.y;
+  // Open the menu below the toolbar when there is not enough room above it (near the top of the screen).
+  const menuItems = 3 + (im && ed.page.layout !== 'free' ? 2 : 0) + (fr?.file ? 5 : 0) + (im ? 1 : 0);
+  const menuBelow = top < menuItems * 42 + 24;
 
   return (
     <div ref={ref} className="ftb" style={{ left: cx, top }} role="toolbar" aria-label="Item actions">
@@ -58,6 +60,9 @@ export function FloatingToolbar({ box, onPosition }: { box: SelBox; onPosition: 
           <button onClick={() => { setMenu(false); ed.order('back'); }}>Send to back</button>
           {im && ed.page.layout !== 'free' && <button onClick={() => { setMenu(false); ed.fillCell(im); }}>Fill cell</button>}
           {im && ed.page.layout !== 'free' && <button onClick={() => { setMenu(false); ed.fitCell(im); }}>Fit cell</button>}
+          {(im || fr?.file) && <button onClick={() => { setMenu(false); ed.removeBackground((im ?? fr)!.id); }}>Remove background</button>}
+          {fr?.file && <button onClick={() => { setMenu(false); ed.centerFace(fr.id); }}>Center on face</button>}
+          {fr?.file && <button onClick={() => { setMenu(false); ed.setPanel('item'); }}>Photo options and color</button>}
           {fr?.file && <button onClick={() => { setMenu(false); ed.detach(fr.id); }}>Take out of frame</button>}
           {fr?.file && <button onClick={() => { setMenu(false); ed.copyToAll(fr); }}>Use in all frames</button>}
         </div>

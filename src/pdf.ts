@@ -1,6 +1,6 @@
 import { degrees, PDFDocument, PDFFont, rgb, StandardFonts } from 'pdf-lib';
 import type { Project, Quality } from './types';
-import { exportBytes } from './images';
+import { exportImage } from './images';
 import { borderRect, cropMarkSegments, frameCrop } from './layout';
 import { mmToPt } from './units';
 
@@ -20,6 +20,12 @@ export async function buildPdf(p: Project, quality: Quality, onProgress?: (n: nu
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const embedded = new Map<string, Awaited<ReturnType<PDFDocument['embedJpg']>>>();
+  const embed = async (file: string, rot: number, crop: import('./types').Crop) => {
+    const key = `${file}|${rot}|${JSON.stringify(crop)}|${quality}`;
+    let e = embedded.get(key);
+    if (!e) { const r = await exportImage(file, rot, crop, quality); e = r.png ? await doc.embedPng(r.bytes) : await doc.embedJpg(r.bytes); embedded.set(key, e); }
+    return e;
+  };
   for (let i = 0; i < p.pages.length; i++) {
     onProgress?.(i, p.pages.length);
     const pg = p.pages[i];
@@ -27,21 +33,19 @@ export async function buildPdf(p: Project, quality: Quality, onProgress?: (n: nu
     const page = doc.addPage([W, H]);
     page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: hex(pg.background) });
     for (const im of pg.images) {
-      const key = `${im.file}|${im.rot}|${JSON.stringify(im.crop)}`;
-      let e = embedded.get(key);
-      if (!e) { e = await doc.embedJpg(await exportBytes(im.file, im.rot, im.crop, quality)); embedded.set(key, e); }
+      const e = await embed(im.file, im.rot, im.crop);
       const a = ((im.angle ?? 0) * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a);
       // bottom-left corner after rotating about the centre (screen coords, y down), then to pdf coords
       const cx = (im.x + im.w / 2) * W, cy = (im.y + im.h / 2) * H, hw = (im.w * W) / 2, hh = (im.h * H) / 2;
       const bx = cx + (-hw * cs - hh * sn), by = cy + (-hw * sn + hh * cs);
+      if (im.bg) page.drawRectangle({ x: bx, y: H - by, width: im.w * W, height: im.h * H, color: hex(im.bg), rotate: degrees(-(im.angle ?? 0)) });
       page.drawImage(e, { x: bx, y: H - by, width: im.w * W, height: im.h * H, rotate: degrees(-(im.angle ?? 0)) });
     }
     for (const f of pg.frames) {
       if (!f.file) continue;
       const crop = frameCrop(f, pg.widthMm, pg.heightMm);
-      const key = `${f.file}|${f.rot}|${JSON.stringify(crop)}`;
-      let e = embedded.get(key);
-      if (!e) { e = await doc.embedJpg(await exportBytes(f.file, f.rot, crop, quality)); embedded.set(key, e); }
+      const e = await embed(f.file, f.rot, crop);
+      if (f.bg) page.drawRectangle({ x: f.x * W, y: H - (f.y + f.h) * H, width: f.w * W, height: f.h * H, color: hex(f.bg) });
       page.drawImage(e, { x: f.x * W, y: H - (f.y + f.h) * H, width: f.w * W, height: f.h * H });
       if (p.frameBorder.on) {
         const bw = p.frameBorder.widthMm, r = borderRect(f.w * pg.widthMm, f.h * pg.heightMm, bw, p.frameBorder.place);

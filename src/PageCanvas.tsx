@@ -5,6 +5,7 @@ import type { Frame, FrameBorder, Page, PageImage, PageText, Unit } from './type
 import { FULL, variantUrl } from './images';
 import { borderRect, cropMarkSegments, frameCrop } from './layout';
 import { fmt } from './units';
+import type { Face } from './vision';
 
 const SNAP_PX = 8;
 const PT_MM = 25.4 / 72;
@@ -56,6 +57,7 @@ interface Ctx {
   dragEnd: (id: string) => void;
   setHud: (s: string) => void;
   setGuides: (g: Guides) => void;
+  faces: Face[]; onPickFace: (i: number) => void;
   hovered: () => string | null;
 }
 
@@ -74,7 +76,7 @@ function ImageItem({ im, c, onChange, onSwap }: {
     <KImage
       ref={(n) => { node.current = n; regFn(n); }} image={img ?? undefined}
       x={(im.x + im.w / 2) * S.w} y={(im.y + im.h / 2) * S.h} width={im.w * S.w} height={im.h * S.h}
-      offsetX={(im.w * S.w) / 2} offsetY={(im.h * S.h) / 2} rotation={im.angle ?? 0} fill="#C9D3FF"
+      offsetX={(im.w * S.w) / 2} offsetY={(im.h * S.h) / 2} rotation={im.angle ?? 0} fill={img ? im.bg : '#C9D3FF'}
       draggable={!im.locked} onClick={() => c.pick(im.id, 'tap')} onTap={() => c.pick(im.id, 'tap')}
       onDragStart={(e) => { start.current = { x: e.target.x(), y: e.target.y() }; c.dragStart(im.id); }}
       onDragMove={(e) => { c.dragMove(im.id, e.target); hud(e.target); }}
@@ -134,7 +136,7 @@ function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial
           onClick={(e) => { const q = e.target.getRelativePointerPosition(); if (q) onChange({ cx: q.x / (fw / crop.w), cy: q.y / (fh / crop.h) }); }}
           onTap={(e) => { const q = e.target.getRelativePointerPosition(); if (q) onChange({ cx: q.x / (fw / crop.w), cy: q.y / (fh / crop.h) }); }} />
       )}
-      <Rect width={fw} height={fh} cornerRadius={4} fill={img ? '#fff' : dropTarget ? 'rgba(20,184,166,.16)' : '#F5F4FF'} />
+      <Rect width={fw} height={fh} cornerRadius={4} fill={img ? (f.bg ?? '#fff') : dropTarget ? 'rgba(20,184,166,.16)' : '#F5F4FF'} />
       {img && (
         <KImage
           image={img} width={fw} height={fh}
@@ -169,6 +171,16 @@ function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial
         <>
           <Rect width={fw} height={fh} listening={false} stroke={PRIMARY} strokeWidth={2} />
           {[[0, 0], [fw, 0], [0, fh], [fw, fh]].map(([x, y], i) => <Circle key={i} x={x} y={y} radius={7} fill="#fff" stroke={PRIMARY} strokeWidth={2} listening={false} shadowColor="#000" shadowBlur={4} shadowOpacity={0.25} />)}
+          {c.faces.map((fc, i) => {
+            const cx = ((fc.x - crop.x) / crop.w) * fw, cy = ((fc.y - crop.y) / crop.h) * fh, r = Math.max(14, ((fc.size / crop.h) * fh) / 2);
+            return (
+              <Group key={i} x={cx} y={cy} onClick={() => c.onPickFace(i)} onTap={() => c.onPickFace(i)}>
+                <Circle radius={r} fill="rgba(0,0,0,0.001)" stroke="#fff" strokeWidth={2} dash={[6, 4]} shadowColor="#000" shadowBlur={3} shadowOpacity={0.5} />
+                <Circle y={-r} radius={10} fill={PRIMARY} />
+                <KText text={String(i + 1)} x={-10} y={-r - 6} width={20} align="center" fontSize={11} fontStyle="bold" fill="#fff" listening={false} />
+              </Group>
+            );
+          })}
         </>
       )}
     </Group>
@@ -209,7 +221,7 @@ export default function PageCanvas(p: {
   adjust: boolean; dropTarget: string | null; border: FrameBorder; cropMarks: boolean;
   hitRef: React.MutableRefObject<((x: number, y: number) => string | null) | null>;
   onSelBox: (b: SelBox | null) => void; onDragging: (d: boolean) => void;
-  padB?: number; reserve?: string; focusId?: string | null; onSnap: (imgId: string, frameId: string) => void;
+  padB?: number; reserve?: string; focusId?: string | null; faces: Face[]; onPickFace: (i: number) => void; onSnap: (imgId: string, frameId: string) => void;
   children?: React.ReactNode;
 }) {
   const { page, selectedIds } = p;
@@ -326,7 +338,7 @@ export default function PageCanvas(p: {
 
   const ctx: Ctx = {
     S, kz, m, unit: p.unit, page, selected, adjust: p.adjust, dropTarget: p.dropTarget ?? hover, border: p.border, cropMarks: p.cropMarks,
-    reg, setHud, setGuides, hovered: () => hoverRef.current,
+    reg, setHud, setGuides, faces: p.faces, onPickFace: p.onPickFace, hovered: () => hoverRef.current,
     pick: p.onPick,
     dragStart: (id) => {
       p.onPick(id, 'drag');

@@ -16,3 +16,7 @@ Optional release signing, add these repo secrets:
 - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`
 
 Local: `npm run build && npx cap sync android && cd android && ./gradlew assembleDebug`
+
+## On-device vision
+Face finding and background removal run on the phone with [MediaPipe Tasks](https://github.com/google-ai-edge/mediapipe) (Apache-2.0).
+The runtime and two small models (`blaze_face_short_range`, `selfie_segmenter`) are bundled in `public/mp/`, so no internet is needed.

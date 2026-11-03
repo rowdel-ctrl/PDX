@@ -11,6 +11,8 @@ export interface Frame {
   zoom: number;                // 1 = photo just covers the frame
   cx: number; cy: number;      // centre of the visible part, fractions of the (rotated) photo
   locked?: boolean;
+  /** colour shown behind a cut-out photo */
+  bg?: string;
 }
 export interface FrameBorder { on: boolean; widthMm: number; color: string; place: 'outside' | 'inside' }
 export interface TrayItem { id: string; file: string; aspect: number }
@@ -30,6 +32,8 @@ export interface PageImage {
   /** free rotation in degrees (about the centre) */
   angle?: number;
   locked?: boolean;
+  /** colour shown behind a cut-out photo */
+  bg?: string;
   /** all fractions of the page */
   x: number;
   y: number;

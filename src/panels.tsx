@@ -10,7 +10,8 @@ import { GROUPS, TEMPLATES } from './templates';
 import { newPage } from './storage';
 import { PAGE_HIT } from './PageCanvas';
 import { More, Segmented, SliderRow, Swatches, Switch } from './ui';
-import { Back, Crop, FrameIcon, Plus, RotR, Template, Trash, Type } from './icons';
+import type { Frame, PageImage } from './types';
+import { Back, Crop, Face, FrameIcon, Plus, RotR, Template, Trash, Type, Wand } from './icons';
 
 export const FRAME_SIZES: [string, number, number][] = [
   ['Passport 35×45', 35, 45], ['1×1 in', 25.4, 25.4], ['1.5×1.5 in', 38.1, 38.1], ['2×2 in', 50.8, 50.8], ['3×4 cm', 30, 40], ['Wallet 2×3 in', 50.8, 76.2],
@@ -127,6 +128,7 @@ function FramesTab() {
           </div>
         </div>
         <Switch label="Same photo in every frame" hint="When all frames are empty" checked={ed.sameAll} onChange={ed.setSameAll} />
+        <Switch label="Center faces automatically" hint="Off by default. New photos go on the biggest face." checked={ed.autoFace} onChange={ed.setAutoFace} />
         {page.frames.length > 0 && <button className="btn danger-outline" onClick={ed.clearFrames}><Trash /> Remove all frames</button>}
       </More>
     </>
@@ -314,6 +316,28 @@ export function PagePanel() {
 
 // ---------------------------------------------------------------- Item (crop / frame options)
 
+/** Remove background, plus the color shown behind a cut-out (for example the blue or white of an ID photo). */
+function BgControls({ id, file, bg }: { id: string; file: string; bg?: string }) {
+  const ed = useEd();
+  const cut = file.endsWith('.png');
+  return (
+    <>
+      <button className="btn tonal" style={{ alignSelf: 'flex-start' }} onClick={() => ed.removeBackground(id)}><Wand /> {cut ? 'Remove background again' : 'Remove background'}</button>
+      {(cut || bg) && (
+        <div className="field">Color behind the photo
+          <div className="chips">
+            <Chip on={bg === '#FFFFFF'} onClick={() => ed.setBg(id, '#FFFFFF')}>White</Chip>
+            <Chip on={bg === '#2F6FD6'} onClick={() => ed.setBg(id, '#2F6FD6')}>ID blue</Chip>
+            <Chip on={bg === '#C62828'} onClick={() => ed.setBg(id, '#C62828')}>ID red</Chip>
+            <Chip on={!bg} onClick={() => ed.setBg(id, undefined)}>None</Chip>
+          </div>
+          <Swatches label="Other color" value={bg ?? '#FFFFFF'} onChange={(c) => ed.setBg(id, c)} />
+        </div>
+      )}
+    </>
+  );
+}
+
 export function ItemPanel() {
   const ed = useEd();
   const { selImage: im, selFrame: fr, unit, fsize } = ed;
@@ -333,6 +357,7 @@ export function ItemPanel() {
           ))}
           <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => ed.resetCrop(im)}>Undo trimming</button>
         </div>
+        <BgControls id={im.id} file={im.file} bg={im.bg} />
         <span className="muted small">To tilt the photo, drag the round handle above it.</span>
       </div>
     );
@@ -344,11 +369,13 @@ export function ItemPanel() {
           <div className="tools">
             <button className="btn primary" onClick={() => { ed.setAdjust(true); ed.setPanel(null); }}><Crop /> Crop</button>
             <button className="btn" onClick={() => ed.rotateFrame(fr, 1)}><RotR /> Turn</button>
+            <button className="btn tonal" onClick={() => ed.centerFace(fr.id)}><Face /> Center on face</button>
             <button className="btn tonal" onClick={() => ed.copyToAll(fr)}>Use in all frames</button>
             <button className="btn" onClick={() => ed.detach(fr.id)}>Take out of frame</button>
             <button className="btn" onClick={() => ed.updateFrame(fr.id, { file: '', zoom: 1, cx: 0.5, cy: 0.5, rot: 0 })}>Remove photo</button>
           </div>
         ) : <p className="muted small" style={{ margin: 0 }}>This frame is empty. Open Add and tap a photo, or drag a photo onto it.</p>}
+        {fr.file && <BgControls id={fr.id} file={fr.file} bg={fr.bg} />}
         <More title="Frame size">
           <div className="row" style={{ alignItems: 'center' }}>
             <span className="muted small">This frame: {fmt(fr.w * ed.page.widthMm, unit)} × {fmt(fr.h * ed.page.heightMm, unit)} {unit}</span>

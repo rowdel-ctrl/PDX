@@ -30,6 +30,10 @@ export interface Ed {
   rotateFrame: (f: Frame, dir: 1 | -1) => void;
   copyToAll: (f: Frame) => void;
   detach: (frameId: string) => void;
+  autoFace: boolean; setAutoFace: (b: boolean) => void;
+  centerFace: (frameId: string) => void;
+  removeBackground: (id: string) => void;
+  setBg: (id: string, color: string | undefined) => void;
   sameAll: boolean; setSameAll: (b: boolean) => void;
   adjust: boolean; setAdjust: (b: boolean) => void;
   // images

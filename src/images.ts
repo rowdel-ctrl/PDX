@@ -23,7 +23,9 @@ async function loadBlob(blob: Blob) {
   try { return await loadSrc(url); } finally { URL.revokeObjectURL(url); }
 }
 
-function canvasOf(img: CanvasImageSource, sw: number, sh: number, maxPx: number, rot = 0, crop: Crop = FULL) {
+const isPng = (path: string) => path.endsWith('.png');
+
+function canvasOf(img: CanvasImageSource, sw: number, sh: number, maxPx: number, rot = 0, crop: Crop = FULL, keepAlpha = false) {
   const odd = rot % 2 === 1;
   const rwN = odd ? sh : sw, rhN = odd ? sw : sh; // rotated size at natural res
   const cwN = crop.w * rwN, chN = crop.h * rhN;
@@ -32,8 +34,7 @@ function canvasOf(img: CanvasImageSource, sw: number, sh: number, maxPx: number,
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(crop.w * rw)); c.height = Math.max(1, Math.round(crop.h * rh));
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#fff'; // flatten transparency
-  ctx.fillRect(0, 0, c.width, c.height);
+  if (!keepAlpha) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); } // flatten transparency unless the photo is a cut-out
   ctx.translate(-crop.x * rw, -crop.y * rh);
   ctx.translate(rw / 2, rh / 2);
   ctx.rotate((rot * Math.PI) / 2);
@@ -58,7 +59,7 @@ export async function imageUrl(path: string): Promise<string> {
   const hit = cache.get(path);
   if (hit) return hit;
   const r = await Filesystem.readFile({ path, directory: Directory.Data });
-  const url = `data:image/jpeg;base64,${r.data as string}`;
+  const url = `data:${isPng(path) ? 'image/png' : 'image/jpeg'};base64,${r.data as string}`;
   cache.set(path, url);
   return url;
 }
@@ -76,8 +77,9 @@ export async function variantUrl(path: string, rot: number, crop: Crop, maxPx: n
   const hit = variants.get(key);
   if (hit) return hit;
   const img = await element(path);
-  const c = canvasOf(img, img.naturalWidth, img.naturalHeight, maxPx, rot, crop);
-  const url = c.toDataURL('image/jpeg', 0.85);
+  const png = isPng(path);
+  const c = canvasOf(img, img.naturalWidth, img.naturalHeight, maxPx, rot, crop, png);
+  const url = png ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85);
   c.width = c.height = 0;
   variants.set(key, url);
   if (variants.size > 80) variants.delete(variants.keys().next().value as string);
@@ -97,15 +99,50 @@ const QUALITY: Record<Quality, { px: number; q: number }> = {
   high: { px: MAX_STORE_PX, q: 0.92 },
 };
 
-/** JPEG bytes for the PDF at the chosen quality. */
-export async function exportBytes(path: string, rot: number, crop: Crop, quality: Quality): Promise<Uint8Array> {
+/** Image bytes for the PDF at the chosen quality (PNG for cut-outs so they keep their transparency). */
+export async function exportImage(path: string, rot: number, crop: Crop, quality: Quality): Promise<{ bytes: Uint8Array; png: boolean }> {
   const img = await element(path);
   const { px, q } = QUALITY[quality];
-  const c = canvasOf(img, img.naturalWidth, img.naturalHeight, px, rot, crop);
-  const dataUrl = c.toDataURL('image/jpeg', q);
+  const png = isPng(path);
+  const c = canvasOf(img, img.naturalWidth, img.naturalHeight, px, rot, crop, png);
+  const dataUrl = png ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', q);
   c.width = c.height = 0;
   const bin = atob(dataUrl.split(',')[1]);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+  return { bytes: out, png };
+}
+
+const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+/** Remove the background of a photo (on this phone). Saves a new transparent PNG and returns it. */
+export async function makeCutout(path: string): Promise<{ file: string; aspect: number }> {
+  const img = await element(path);
+  const { personMask } = await import('./vision');
+  const m = await personMask(img);
+  const k = Math.min(1, 1800 / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.round(img.naturalWidth * k), h = Math.round(img.naturalHeight * k);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(img, 0, 0, w, h);
+  // low-res mask -> smooth full-size mask
+  const mc = document.createElement('canvas'); mc.width = m.w; mc.height = m.h;
+  const mctx = mc.getContext('2d')!;
+  const mi = mctx.createImageData(m.w, m.h);
+  for (let i = 0; i < m.data.length; i++) mi.data[4 * i + 3] = Math.round(Math.min(1, Math.max(0, m.data[i])) * 255);
+  mctx.putImageData(mi, 0, 0);
+  const up = document.createElement('canvas'); up.width = w; up.height = h;
+  const uctx = up.getContext('2d', { willReadFrequently: true })!;
+  uctx.imageSmoothingQuality = 'high';
+  uctx.drawImage(mc, 0, 0, w, h);
+  const ud = uctx.getImageData(0, 0, w, h).data;
+  const id = ctx.getImageData(0, 0, w, h);
+  for (let i = 0; i < w * h; i++) id.data[4 * i + 3] = Math.round(smooth(0.4, 0.62, ud[4 * i + 3] / 255) * 255);
+  ctx.putImageData(id, 0, 0);
+  const dataUrl = c.toDataURL('image/png');
+  c.width = c.height = up.width = up.height = mc.width = mc.height = 0;
+  const out = `images/${uid()}.png`;
+  await Filesystem.writeFile({ path: out, data: dataUrl.split(',')[1], directory: Directory.Data, recursive: true });
+  cache.set(out, dataUrl);
+  return { file: out, aspect: w / h };
 }

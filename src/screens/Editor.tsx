@@ -3,7 +3,8 @@ import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayIte
 import { listProjects, newPage, saveProject } from '../storage';
 import { applyLayout, cellCount, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
 import { alignItems, distributeItems, findItem, mapSelected, reorder, type AlignMode, type AnyItem } from '../arrange';
-import { deleteImages, FULL, importImage, newId } from '../images';
+import { deleteImages, FULL, importImage, makeCutout, newId } from '../images';
+import { faceFit, findFaces, mainFace, type Face } from '../vision';
 import { useBack } from '../back';
 import PageCanvas, { type SelBox } from '../PageCanvas';
 import PagePill from '../PagePill';
@@ -57,6 +58,8 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   const [adjust, setAdjust] = useState(false);
   const [shownPanel, setShownPanel] = useState<PanelId>('add');
   const [sameAll, setSameAll] = useState(true);
+  const [autoFace, setAutoFace] = useState(false);   // off unless the user turns it on
+  const [faces, setFaces] = useState<Face[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState<string | null>(null);
   const [selBox, setSelBox] = useState<SelBox | null>(null);
@@ -125,6 +128,12 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   const selFrame = page && selIds.length === 1 ? page.frames.find((i) => i.id === selIds[0]) ?? null : null;
   const selText = page && selIds.length === 1 ? page.texts.find((i) => i.id === selIds[0]) ?? null : null;
   useEffect(() => { if (!selFrame?.file) setAdjust(false); }, [selFrame?.file, selFrame?.id]);
+  useEffect(() => {
+    if (!adjust || !selFrame?.file) { setFaces([]); return; }
+    let on = true;
+    findFaces(selFrame.file, selFrame.rot).then((l) => { if (on) setFaces(l); });
+    return () => { on = false; };
+  }, [adjust, selFrame?.file, selFrame?.rot]);
   useEffect(() => { if (!selIds.length) setSelBox(null); }, [selIds.length]);
 
   if (!proj || !page) return <div className="screen pad"><button className="btn" onClick={onBack}>Back</button><p>Project not found.</p></div>;
@@ -134,12 +143,27 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   const updateFrame = (fid: string, patch: Partial<Frame>, idx?: number) =>
     editPage((pg) => ({ ...pg, frames: pg.frames.map((f) => (f.id === fid ? clampFrame({ ...f, ...patch }, pg.widthMm, pg.heightMm) : f)) }), idx);
 
+  /** Move and zoom a frame's photo so a face sits in the middle (the biggest one, or the face you picked). */
+  const centerFace = async (fid: string, quiet = false, idx = pi, pick?: Face) => {
+    const f = projRef.current?.pages[idx]?.frames.find((q) => q.id === fid);
+    if (!f?.file) return;
+    if (!quiet) say('Looking for a face…');
+    const face = pick ?? mainFace(await findFaces(f.file, f.rot));
+    const now = projRef.current?.pages[idx]?.frames.find((q) => q.id === fid);
+    if (!now || now.file !== f.file) return;
+    if (!face) { if (!quiet) say('No face found. Use Crop to move the photo.'); return; }
+    editPage((pg) => ({ ...pg, frames: pg.frames.map((q) => (q.id === fid ? clampFrame({ ...q, ...faceFit(q, face, pg.widthMm, pg.heightMm) }, pg.widthMm, pg.heightMm) : q)) }), idx);
+    if (!quiet) say('Face centered');
+  };
+  const pickFace = (i: number) => { if (selFrame && faces[i]) centerFace(selFrame.id, true, pi, faces[i]); };
+
   const placePhoto = (fid: string, t: TrayItem) => {
     const fill = { file: t.file, aspect: t.aspect, rot: 0, zoom: 1, cx: 0.5, cy: 0.5 };
     const every = sameAll && idSheet(page);   // first photo on an empty sheet goes in every frame
     const ids = every ? page.frames.map((f) => f.id) : [fid];
     editPage((pg) => ({ ...pg, frames: pg.frames.map((f) => (ids.includes(f.id) ? clampFrame({ ...f, ...fill }, pg.widthMm, pg.heightMm) : f)) }));
     setSel([fid]);
+    if (autoFace) for (const i of ids) centerFace(i, true);
   };
 
   const addFrame = () => {
@@ -168,7 +192,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     updateFrame(f.id, { rot: (f.rot + dir + 4) % 4, cx, cy });
   };
   const copyToAll = (f: Frame) => editPage((pg) => ({
-    ...pg, frames: pg.frames.map((q) => clampFrame({ ...q, file: f.file, aspect: f.aspect, rot: f.rot, zoom: f.zoom, cx: f.cx, cy: f.cy }, pg.widthMm, pg.heightMm)),
+    ...pg, frames: pg.frames.map((q) => clampFrame({ ...q, file: f.file, aspect: f.aspect, rot: f.rot, zoom: f.zoom, cx: f.cx, cy: f.cy, bg: f.bg }, pg.widthMm, pg.heightMm)),
   }));
 
   // ---------------------------------------------------------------- photo library
@@ -185,6 +209,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   const placeItems = (items: TrayItem[]) => {
     const idx = pi;
     let extra = 0, placed = 0;
+    const filled: { page: number; id: string }[] = [];
     edit((p) => {
       const pages = [...p.pages];
       const queue = [...items];
@@ -194,7 +219,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         const same = sameAll && items.length === 1 && idSheet(pg);   // one photo on an empty sheet fills every frame
         const frames = pg.frames.map((f) => {
           if (!f.file && queue.length) {
-            const it = same ? queue[0] : queue.shift()!; if (!same) placed++;
+            const it = same ? queue[0] : queue.shift()!; if (!same) placed++; filled.push({ page: k, id: f.id });
             return { ...f, file: it.file, aspect: it.aspect, rot: 0, zoom: 1, cx: 0.5, cy: 0.5 };
           }
           return f;
@@ -215,6 +240,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
       return { ...p, pages };
     });
     say(`Added ${placed}${extra ? ` (${extra} new ${extra === 1 ? 'page' : 'pages'})` : ''}`);
+    if (autoFace) for (const f of filled) centerFace(f.id, true, f.page);
   };
   const addPhotos = async (files: FileList | File[] | null) => {
     if (!files || !files.length) return;
@@ -237,6 +263,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
       return { ...pg, fill: undefined, frames, images: pg.images.filter((i) => i.id !== imgId) };
     });
     setSel([fid]);
+    if (autoFace) centerFace(fid, true);
   };
   /** Take the photo out of its frame so it floats on the page again. */
   const detach = (fid: string) => {
@@ -248,6 +275,37 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     });
     setSel([]);
   };
+  /** Cut the person out of the photo (runs on the phone). The cut-out replaces the photo and is also kept in your photos. */
+  const removeBackground = async (id: string) => {
+    const it = findItem(page, id);
+    if (!it || it.kind === 'text') return;
+    const src = (it.item as { file: string }).file;
+    if (!src) return;
+    const idx = pi;
+    say('Removing the background…');
+    try {
+      const cut = await makeCutout(src);
+      seen.current.add(cut.file);
+      edit((p) => ({
+        ...p,
+        tray: [...p.tray, { id: newId(), file: cut.file, aspect: cut.aspect }],
+        pages: p.pages.map((pg, k) => (k !== idx ? pg : {
+          ...pg,
+          images: pg.images.map((i) => (i.id === id ? { ...i, file: cut.file, aspect: cut.aspect } : i)),
+          frames: pg.frames.map((f) => (f.id === id ? { ...f, file: cut.file, aspect: cut.aspect } : f)),
+        })),
+      }));
+      say('Background removed. Pick a color behind the photo in its options.');
+    } catch (e) {
+      console.error(e);
+      say('Could not remove the background on this phone.');
+    }
+  };
+  const setBg = (id: string, color: string | undefined) => editPage((pg) => ({
+    ...pg,
+    images: pg.images.map((i) => (i.id === id ? { ...i, bg: color } : i)),
+    frames: pg.frames.map((f) => (f.id === id ? { ...f, bg: color } : f)),
+  }));
   const removeFromLibrary = (tid: string) => { edit((p) => ({ ...p, tray: p.tray.filter((t) => t.id !== tid) })); if (selTray === tid) setSelTray(null); };
 
   // ---------------------------------------------------------------- images
@@ -409,7 +467,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     addPhotos, addFromLibrary, removeFromLibrary, selTray, setSelTray, hit, setOver,
     fsize, setFsize: (w, h) => setFs({ w, h }), addFrame, fillWithFrames, clearFrames: () => { editPage((pg) => ({ ...pg, frames: [] })); setSel([]); },
     placePhoto, updateFrame: (fid, patch) => updateFrame(fid, patch), resizeFrame, rotateFrame, copyToAll,
-    detach, sameAll, setSameAll, adjust, setAdjust,
+    detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, setBg,
     rotateImage, setCropSide, resetCrop, fillCell, fitCell, addText, updateText, setLayout, relayout, fillWith, applyTemplate,
     deleteSel, duplicateSel, toggleLock, align, distribute, order,
     addPage, dupPage, delPage, movePage, goPage, openGrid: () => setGridOpen(true),
@@ -441,7 +499,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
           adjust={adjust} dropTarget={over} border={proj.frameBorder} cropMarks={proj.cropMarks} hitRef={hit}
           onSelBox={setSelBox} onDragging={setDragging}
           padB={showTools || cropping ? 14 : 112} reserve={cropping ? '208px' : showTools ? 'calc(92px + var(--sheet-h))' : '0px'}
-          onSnap={snapIntoFrame} focusId={cropping ? selFrame?.id : null}
+          faces={cropping ? faces : []} onPickFace={pickFace} onSnap={snapIntoFrame} focusId={cropping ? selFrame?.id : null}
         >
           <button className={'fab-small' + (multi ? ' on' : '')} aria-pressed={multi} aria-label="Select multiple items" onClick={() => { setMulti(!multi); if (multi) setSel(sel.slice(0, 1)); }}><Checklist /></button>
           {multi && <div className="chip-hint">Tap items to select them</div>}
@@ -472,7 +530,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         </section>
 
         <CropCard
-          frame={cropping ? selFrame : null}
+          frame={cropping ? selFrame : null} faces={faces} onFace={pickFace}
           onZoom={(z) => selFrame && updateFrame(selFrame.id, { zoom: z })}
           onReset={() => selFrame && updateFrame(selFrame.id, { zoom: 1, cx: 0.5, cy: 0.5 })}
           onDone={() => setAdjust(false)}
