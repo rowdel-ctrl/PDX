@@ -339,3 +339,9 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .choice-thumb{flex:none;display:grid;place-items:center;width:54px;height:60px;border-radius:10px;background:rgba(15,17,21,.06)}
 .choice.first .choice-thumb{background:rgba(255,255,255,.22)}
 .dlg-choices{max-height:52vh;overflow-y:auto}
+
+.pcell2{position:relative}
+.pcell2.picked{border-color:var(--accent);background:var(--accent-soft)}
+.pcheck{position:absolute;left:8px;top:8px;width:26px;height:26px;border-radius:50%;border:2px solid var(--sub);background:var(--card);color:#fff;display:grid;place-items:center;font-size:15px;font-weight:700;z-index:2}
+.pcheck.on{background:var(--accent);border-color:var(--accent)}
+.fullsheet .topbar .btn{min-height:38px;padding:0 14px}

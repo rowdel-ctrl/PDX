@@ -593,6 +593,30 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     goPage(Math.max(0, Math.min(i, proj.pages.length - 2)));
     say(`Page ${i + 1} deleted. Tap undo to bring it back.`);
   };
+  /** Duplicate several pages: each copy goes right after its original. */
+  const dupPages = (idx: number[]) => {
+    const sorted = [...idx].sort((a, b) => b - a);
+    edit((p) => {
+      const pages = [...p.pages];
+      for (const i of sorted) {
+        const src = pages[i]; if (!src) continue;
+        pages.splice(i + 1, 0, { ...src, id: newId(), images: src.images.map((im) => ({ ...im, id: newId() })), texts: src.texts.map((t) => ({ ...t, id: newId() })), frames: src.frames.map((f) => ({ ...f, id: newId() })) });
+      }
+      return { ...p, pages };
+    });
+    say(`Duplicated ${idx.length} ${idx.length === 1 ? 'page' : 'pages'}`);
+  };
+  /** Delete several pages (at least one page always stays). Returns false if nothing was deleted. */
+  const delPages = async (idx: number[]): Promise<boolean> => {
+    if (idx.length >= proj.pages.length) { say('A project needs at least one page'); return false; }
+    if (!(await askConfirm({ title: `Delete ${idx.length} ${idx.length === 1 ? 'page' : 'pages'}?`, body: 'You can undo this with the undo button.', ok: 'Delete', danger: true }))) return false;
+    const gone = new Set(idx);
+    edit((p) => ({ ...p, pages: p.pages.filter((_, k) => !gone.has(k)) }));
+    setPi((c) => Math.max(0, Math.min(c, proj.pages.length - idx.length - 1)));
+    setSel([]);
+    say(`${idx.length} ${idx.length === 1 ? 'page' : 'pages'} deleted. Tap undo to bring them back.`);
+    return true;
+  };
   const movePage = (from: number, to: number) => {
     if (from === to) return;
     edit((p) => { const pages = [...p.pages]; const [m] = pages.splice(from, 1); pages.splice(to, 0, m); return { ...p, pages }; });
@@ -718,7 +742,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         {sheet === 'exact' && <ExactSheet onClose={() => setSheet(null)} />}
         {refine && <RefineEdges file={refine.file} bg={refine.bg} onCancel={() => setRefine(null)} onDone={(c) => applyRefined(refine.id, c)} />}
         {posOpen && <PositionSheet onClose={() => setPosOpen(false)} />}
-        {gridOpen && <PageGrid project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} onClose={() => setGridOpen(false)} />}
+        {gridOpen && <PageGrid project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} onDupMany={dupPages} onDelMany={delPages} onClose={() => setGridOpen(false)} />}
       </div>
     </EdCtx.Provider>
   );
