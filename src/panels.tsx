@@ -350,6 +350,7 @@ export function PagePanel() {
           <Swatches label="Border color" value={page.border.color} onChange={(c) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, color: c } }))} />
         </>
       )}
+      <button className="btn tonal" style={{ alignSelf: 'flex-start' }} onClick={ed.openPrinter}>Printer check</button>
       <More>
         {fb.on && (
           <div className="field">Cutting line sits
@@ -367,43 +368,6 @@ export function PagePanel() {
 // ---------------------------------------------------------------- Item (crop / frame options)
 
 /** Remove background, plus the color shown behind a cut-out (for example the blue or white of an ID photo). */
-const ID_COLORS: [string, string][] = [['#FFFFFF', 'White'], ['#2F6FD6', 'Blue'], ['#C62828', 'Red'], ['#9CC4EE', 'Sky']];
-
-function BgControls({ id, file, bg }: { id: string; file: string; bg?: string }) {
-  const ed = useEd();
-  const cut = file.endsWith('.png');
-  const frames = ed.page.frames.filter((f) => f.file).length;
-  const [all, setAll] = useState(frames > 1);
-  const pick = (c: string | undefined) => (all && frames > 1 ? ed.setBgAll(c) : ed.setBg(id, c));
-  const custom = !!bg && !ID_COLORS.some(([c]) => c.toLowerCase() === bg.toLowerCase());
-  return (
-    <>
-      <div className="row2">
-        <button className="btn tonal" onClick={() => ed.removeBackground(id)}><Wand /> {cut ? 'Remove again' : 'Remove background'}</button>
-        <button className="btn tonal" onClick={() => ed.evenLight(id)}>Even out light</button>
-      </div>
-      {cut && <button className="btn tonal" style={{ alignSelf: 'flex-start' }} onClick={() => ed.refineEdges(id)}><Wand /> Refine edges</button>}
-      {(cut || bg) && (
-        <div className="field">Photo background
-          <div className="idcolors">
-            {ID_COLORS.map(([c, name]) => (
-              <button key={c} className={'idc' + (bg?.toLowerCase() === c.toLowerCase() ? ' on' : '')} onClick={() => pick(c)} aria-pressed={bg?.toLowerCase() === c.toLowerCase()}>
-                <span className="dot" style={{ background: c }} /><span>{name}</span>
-              </button>
-            ))}
-            <label className={'idc' + (custom ? ' on' : '')}>
-              <span className="dot plus" style={custom ? { background: bg } : undefined}>{custom ? '' : '+'}</span><span>Custom</span>
-              <input type="color" value={bg && /^#[0-9a-f]{6}$/i.test(bg) ? bg : '#ffffff'} onChange={(e) => pick(e.target.value)} />
-            </label>
-          </div>
-          {frames > 1 && <Switch label="Apply to every ID frame" hint={`${frames} frames on this page`} checked={all} onChange={setAll} />}
-          <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => pick(undefined)}>No background color</button>
-        </div>
-      )}
-    </>
-  );
-}
-
 export function ItemPanel() {
   const ed = useEd();
   const { selImage: im, selFrame: fr, unit, fsize } = ed;
@@ -423,7 +387,6 @@ export function ItemPanel() {
           ))}
           <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => ed.resetCrop(im)}>Undo trimming</button>
         </div>
-        <BgControls id={im.id} file={im.file} bg={im.bg} />
         <span className="muted small">To tilt the photo, drag the round handle above it.</span>
       </div>
     );
@@ -441,7 +404,6 @@ export function ItemPanel() {
             <button className="btn" onClick={() => ed.updateFrame(fr.id, { file: '', zoom: 1, cx: 0.5, cy: 0.5, rot: 0 })}>Remove photo</button>
           </div>
         ) : <p className="muted small" style={{ margin: 0 }}>This frame is empty. Open Add and tap a photo, or drag a photo onto it.</p>}
-        {fr.file && <BgControls id={fr.id} file={fr.file} bg={fr.bg} />}
         <More title="Frame size">
           <div className="row" style={{ alignItems: 'center' }}>
             <span className="muted small">This frame: {fmt(fr.w * ed.page.widthMm, unit)} × {fmt(fr.h * ed.page.heightMm, unit)} {unit}</span>

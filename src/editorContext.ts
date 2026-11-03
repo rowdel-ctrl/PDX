@@ -3,7 +3,7 @@ import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayIte
 import type { AlignMode, SelectMode } from './arrange';
 import type { Template } from './templates';
 
-export type PanelId = 'add' | 'layout' | 'text' | 'page' | 'item';
+export type PanelId = 'add' | 'layout' | 'text' | 'page' | 'item' | 'cutout' | 'color' | 'arrange' | 'copies' | 'select' | 'size';
 export type AddTab = 'photos' | 'frames' | 'templates';
 
 export interface Ed {
@@ -55,7 +55,8 @@ export interface Ed {
   setGap: (gx: number, gy: number) => void; selectAll: () => void; fitIntoFrame: (imgId: string) => void;
   selectMany: (ids: string[]) => void; selectBy: (m: SelectMode) => void; fillGridSel: (across: number, down: number, gapMm: number) => void;
   setBox: (id: string, b: Partial<{ x: number; y: number; w: number; h: number }>) => void;
-  openSheet: (s: 'fill' | 'exact') => void;
+  setSel: (ids: string[]) => void;
+  openPrinter: () => void;
   align: (m: AlignMode) => void; distribute: (axis: 'x' | 'y') => void; order: (to: 'front' | 'back') => void;
   // pages
   addPage: () => void; dupPage: (i: number) => void; delPage: (i: number) => void; movePage: (f: number, t: number) => void; goPage: (i: number) => void;

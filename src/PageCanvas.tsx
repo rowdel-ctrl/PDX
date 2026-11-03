@@ -337,7 +337,7 @@ export default function PageCanvas(p: {
 
   useEffect(() => { const c = stageRef.current?.content; if (c) c.style.touchAction = 'none'; }, []);
 
-  const padT = 10 + (p.marquee ? 78 : 0), padX = 12, padB = p.padB ?? 24;
+  const padT = 10 + (p.marquee ? 44 : 0), padX = 12, padB = p.padB ?? 24;
   const kFit = Math.max(0.01, Math.min((avail.w - padX * 2) / page.widthMm, (avail.h - padT - padB) / page.heightMm));
   const kz = kFit * zoom;
   const S = { w: page.widthMm * kz, h: page.heightMm * kz };

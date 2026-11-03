@@ -2,19 +2,8 @@ import { useEffect, useState } from 'react';
 import { useEd } from './editorContext';
 import { findItem, gridFit, groupBox } from './arrange';
 import { fmt, fromMm, toMm } from './units';
-import { Close } from './icons';
 import { Switch } from './ui';
 import type { Unit } from './types';
-
-function Head({ title, hint, onClose }: { title: string; hint?: string; onClose: () => void }) {
-  return (
-    <>
-      <div className="sheet-grab" />
-      <div className="sheet-head"><b>{title}</b><button className="icon-btn" onClick={onClose} aria-label="Close"><Close /></button></div>
-      {hint && <p className="muted small" style={{ margin: '0 0 8px' }}>{hint}</p>}
-    </>
-  );
-}
 
 const Stepper = ({ label, value, max, onChange }: { label: string; value: number; max: number; onChange: (v: number) => void }) => (
   <div className="field">{label}
@@ -27,7 +16,7 @@ const Stepper = ({ label, value, max, onChange }: { label: string; value: number
 );
 
 /** Repeat the selected item or group in rows and columns across the page. */
-export function FillGridSheet({ onClose }: { onClose: () => void }) {
+export function FillForm({ onDone }: { onDone?: () => void }) {
   const ed = useEd();
   const [gap, setGap] = useState(ed.page.spacingMm || 2);
   const fit = gridFit(ed.page, ed.sel, gap);
@@ -37,20 +26,17 @@ export function FillGridSheet({ onClose }: { onClose: () => void }) {
   if (!fit) return null;
   const a = Math.min(across, fit.across), d = Math.min(down, fit.down), copies = a * d - 1;
   return (
-    <div className="sheet-back" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-label="Fill the page" onClick={(e) => e.stopPropagation()}>
-        <Head title="Fill the page" hint="Copies the selected items into rows and columns." onClose={onClose} />
-        <div className="two-col">
-          <Stepper label="Across" value={a} max={fit.across} onChange={(v) => { setAuto(false); setAcross(v); }} />
-          <Stepper label="Down" value={d} max={fit.down} onChange={(v) => { setAuto(false); setDown(v); }} />
-        </div>
-        <label className="slider"><span>Gap</span>
-          <input type="range" min={0} max={20} step={0.5} value={gap} onChange={(e) => setGap(Number(e.target.value))} />
-          <span className="muted val">{fmt(gap, ed.unit)} {ed.unit}</span>
-        </label>
-        <p className="muted small">Fits {fit.across} × {fit.down} of {fmt(fit.w, ed.unit)} × {fmt(fit.h, ed.unit)} {ed.unit} from where the selection starts. Copies that do not fit are skipped.</p>
-        <button className="btn primary wide" disabled={copies < 1} onClick={() => { ed.fillGridSel(a, d, gap); onClose(); }}>Fill page · {copies < 1 ? 'nothing to add' : `${a * d} in total`}</button>
+    <div className="field">Fill the page with copies
+      <div className="two-col">
+        <Stepper label="Across" value={a} max={fit.across} onChange={(v) => { setAuto(false); setAcross(v); }} />
+        <Stepper label="Down" value={d} max={fit.down} onChange={(v) => { setAuto(false); setDown(v); }} />
       </div>
+      <label className="slider"><span>Gap</span>
+        <input type="range" min={0} max={20} step={0.5} value={gap} onChange={(e) => setGap(Number(e.target.value))} />
+        <span className="muted val">{fmt(gap, ed.unit)} {ed.unit}</span>
+      </label>
+      <span className="muted small">Fits {fit.across} × {fit.down} of {fmt(fit.w, ed.unit)} × {fmt(fit.h, ed.unit)} {ed.unit}. Copies that do not fit are skipped.</span>
+      <button className="btn primary wide" disabled={copies < 1} onClick={() => { ed.fillGridSel(a, d, gap); onDone?.(); }}>Fill page · {copies < 1 ? 'nothing to add' : `${a * d} in total`}</button>
     </div>
   );
 }
@@ -58,7 +44,7 @@ export function FillGridSheet({ onClose }: { onClose: () => void }) {
 const field = (mm: number, u: Unit) => fmt(mm, u);
 
 /** Type the exact size and position of the selected item. */
-export function ExactSheet({ onClose }: { onClose: () => void }) {
+export function ExactForm() {
   const ed = useEd();
   const id = ed.selImage?.id ?? ed.selFrame?.id ?? ed.selText?.id ?? '';
   const it = findItem(ed.page, id);
@@ -91,27 +77,26 @@ export function ExactSheet({ onClose }: { onClose: () => void }) {
     </label>
   );
   return (
-    <div className="sheet-back" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-label="Size and position" onClick={(e) => e.stopPropagation()}>
-        <Head title="Size and position" hint="Type exact values. Measured from the top-left corner of the page." onClose={onClose} />
-        <div className="seg" style={{ alignSelf: 'flex-end' }}>{(['mm', 'cm', 'in'] as Unit[]).map((u) => <button key={u} className={unit === u ? 'on' : ''} onClick={() => setUnit(u)}>{u}</button>)}</div>
-        <div className="two-col">
-          <F k="w" label={`Width (${unit})`} off={isText} />
-          <F k="h" label={`Height (${unit})`} off={isText} />
-          <F k="x" label={`From left (${unit})`} />
-          <F k="y" label={`From top (${unit})`} />
-        </div>
-        {!isText && <Switch label="Keep proportions" checked={keep} onChange={setKeep} />}
-        {rotated && <p className="muted small">This photo is turned, so the box shown is its outline. Size changes apply to the photo itself.</p>}
-        <div className="field">Nudge 1 mm
-          <div className="nudge">
-            <button aria-label="Nudge left" onClick={() => nudge(-1, 0)}>‹</button>
-            <button aria-label="Nudge up" onClick={() => nudge(0, -1)}>⌃</button>
-            <button aria-label="Nudge down" onClick={() => nudge(0, 1)}>⌄</button>
-            <button aria-label="Nudge right" onClick={() => nudge(1, 0)}>›</button>
-          </div>
-        </div>
+    <>
+    <div className="field">Size and position
+      <div className="seg" style={{ alignSelf: 'flex-end' }}>{(['mm', 'cm', 'in'] as Unit[]).map((u) => <button key={u} className={unit === u ? 'on' : ''} onClick={() => setUnit(u)}>{u}</button>)}</div>
+      <div className="four-col">
+        <F k="w" label="Width" off={isText} />
+        <F k="h" label="Height" off={isText} />
+        <F k="x" label="Left" />
+        <F k="y" label="Top" />
       </div>
     </div>
+    {!isText && <Switch label="Keep proportions" checked={keep} onChange={setKeep} />}
+    {rotated && <p className="muted small" style={{ margin: 0 }}>This photo is turned, so the box shown is its outline. Size changes apply to the photo itself.</p>}
+    <div className="nudge-row"><span>Nudge 1 mm</span>
+      <div className="nudge">
+        <button aria-label="Nudge left" onClick={() => nudge(-1, 0)}>‹</button>
+        <button aria-label="Nudge up" onClick={() => nudge(0, -1)}>⌃</button>
+        <button aria-label="Nudge down" onClick={() => nudge(0, 1)}>⌄</button>
+        <button aria-label="Nudge right" onClick={() => nudge(1, 0)}>›</button>
+      </div>
+    </div>
+    </>
   );
 }

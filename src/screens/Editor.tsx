@@ -13,20 +13,21 @@ import PagePill from '../PagePill';
 import CropCard from '../CropCard';
 import PageGrid from '../PageGrid';
 import ExportSheet from './Export';
-import { FloatingToolbar, PositionSheet } from '../Toolbar';
-import { ExactSheet, FillGridSheet } from '../sheets';
+import { FloatingToolbar } from '../Toolbar';
+import SettingsSheet from '../SettingsSheet';
+import { ArrangePanel, ColorPanel, CopiesPanel, CutoutPanel, SelectPanel, SizePanel } from '../toolpanels';
 import { AddPanel, ItemPanel, LayoutPanel, PagePanel, TextPanel } from '../panels';
 import { EdCtx, type AddTab, type Ed, type PanelId } from '../editorContext';
 import { TEMPLATES, type Template } from '../templates';
 import PageThumb from '../PageThumb';
 import { presetOf } from '../units';
-import { Back, Checklist, Close, Hand, Grid, Plus, Redo, Share, Tune, Type, Undo, Image as ImageIcon } from '../icons';
+import { Back, Checklist, Close, Copy, Crop as CropIcon, Edit, Hand, Grid, Layers, Palette, Plus, Redo, Share, Size, Tune, Type, Undo, Wand, Image as ImageIcon } from '../icons';
 
 export type Tab = PanelId;
 const NAV: [PanelId, string, () => React.ReactElement][] = [
-  ['add', 'Add', Plus], ['layout', 'Layout', Grid], ['text', 'Text', Type], ['page', 'Page', Tune],
+  ['add', 'Add', Plus], ['layout', 'Layout', Grid], ['text', 'Text', Type], ['page', 'Page', Tune], ['select', 'Select', Checklist],
 ];
-const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Layout', text: 'Text', page: 'Page', item: 'Edit' };
+const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Layout', text: 'Text', page: 'Page', item: 'Crop', cutout: 'Cut out', color: 'Background color', arrange: 'Arrange', copies: 'Copies', select: 'Select', size: 'Group size' };
 
 const filesOf = (p: Project) => new Set([
   ...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]),
@@ -54,7 +55,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   const [panel, setPanel] = useState<PanelId | null>(initialTab === 'layout' ? 'layout' : initialTab === 'frames' ? 'add' : null);
   const [addTab, setAddTab] = useState<AddTab>('photos');
   const [exporting, setExporting] = useState(false);
-  const [posOpen, setPosOpen] = useState(false);
+  const [printerOpen, setPrinterOpen] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
   const [toast, setToast] = useState<{ text: string; kind: ToastKind } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -125,7 +126,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     onBack();
   };
   useBack(() => {
-    if (posOpen) setPosOpen(false);
+    if (printerOpen) setPrinterOpen(false);
     else if (gridOpen) setGridOpen(false);
     else if (exporting) setExporting(false);
     else if (panel) setPanel(null);
@@ -523,7 +524,6 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     const b = groupBox(pg, selIds); if (!b) return pg;
     return scaleItems(pg, selIds, f, b.x, b.y, b.x - ((f - 1) * b.w) / 2, b.y - ((f - 1) * b.h) / 2);
   });
-  const [sheet, setSheet] = useState<'fill' | 'exact' | null>(null);
   const selectMany = (ids: string[]) => { setSel(ids); if (ids.length > 1) setMulti(true); };
   const selectBy = (m: SelectMode) => {
     const ids = selectWhere(page, m, selIds[0]);
@@ -631,12 +631,30 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     placePhoto, updateFrame: (fid, patch) => updateFrame(fid, patch), resizeFrame, rotateFrame, copyToAll,
     detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, refineEdges, evenLight, setBgAll, setBg,
     rotateImage, setCropSide, resetCrop, fillCell, fitCell, addText, updateText, setLayout, relayout, fillWith, applyTemplate,
-    deleteSel, duplicateSel, toggleLock, scaleSel, selectMany, selectBy, fillGridSel, setBox, openSheet: setSheet, align, distribute, order, setGap, selectAll, fitIntoFrame,
+    deleteSel, duplicateSel, toggleLock, scaleSel, selectMany, selectBy, fillGridSel, setBox, setSel, openPrinter: () => setPrinterOpen(true), align, distribute, order, setGap, selectAll, fitIntoFrame,
     addPage, dupPage, delPage, movePage, goPage, openGrid: () => setGridOpen(true),
   };
 
   const sz = presetOf(page.widthMm, page.heightMm) ?? `${Math.round(page.widthMm)}×${Math.round(page.heightMm)} mm`;
   const toggleNav = (id: PanelId) => setPanel(panel === id ? null : id);
+  // Select mode lives and dies with the Select panel
+  useEffect(() => { setMulti(panel === 'select'); }, [panel]);
+  // item panels close when nothing is selected any more
+  useEffect(() => {
+    if (!selIds.length && panel && ['item', 'cutout', 'color', 'arrange', 'copies', 'size'].includes(panel)) setPanel(null);
+  }, [selIds.length, panel]);
+  type CtxTool = { id: string; label: string; icon: () => React.ReactElement; on: () => void; active?: boolean };
+  const T = (id: PanelId, label: string, icon: () => React.ReactElement): CtxTool => ({ id, label, icon, active: panel === id, on: () => toggleNav(id) });
+  const ctxTools: CtxTool[] | null = (() => {
+    if (!selIds.length || adjust) return null;
+    const more = [T('arrange', 'Arrange', Layers), T('copies', 'Copies', Copy), T('select', 'Select', Checklist)];
+    if (selIds.length > 1) return [T('arrange', 'Arrange', Layers), T('size', 'Group size', Size), T('copies', 'Copies', Copy), T('select', 'Select', Checklist)];
+    if (selImage) return [T('item', 'Crop', CropIcon), T('cutout', 'Cut out', Wand), T('color', 'Color', Palette), ...more];
+    if (selFrame?.file) return [{ id: 'crop', label: 'Crop', icon: CropIcon, on: () => { setPanel(null); setAdjust(true); } }, T('cutout', 'Cut out', Wand), T('color', 'Color', Palette), ...more];
+    if (selFrame) return [{ id: 'add', label: 'Add photo', icon: ImageIcon, active: panel === 'add', on: () => { setAddTab('photos'); toggleNav('add'); } }, T('item', 'Frame', Tune), ...more];
+    if (selText) return [T('text', 'Edit text', Edit), ...more];
+    return null;
+  })();
   const cropping = adjust && !!selFrame?.file;
   const showTools = !!panel;
 
@@ -663,7 +681,6 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
           padB={showTools || cropping ? 14 : 112} reserve={cropping ? '208px' : showTools ? 'calc(92px + var(--sheet-h))' : '0px'}
           faces={cropping ? faces : []} onPickFace={pickFace} onSnap={snapIntoFrame} focusId={cropping ? selFrame?.id : null}
         >
-          <button className={'fab-small' + (multi ? ' on' : '')} aria-pressed={multi} aria-label="Select multiple items" onClick={() => { setMulti(!multi); if (multi) setSel(sel.slice(0, 1)); }}><Checklist /></button>
           <button className={'fab-small second' + (hand ? ' on' : '')} aria-pressed={hand} aria-label="Hand tool: move the view with one finger" onClick={() => setHand(!hand)}><Hand /></button>
           {hand && <div className="chip-hint" style={{ top: 58 }}>Hand tool: drag to move the view. Pinch to zoom.</div>}
           {(multi || selIds.length > 1) && (() => {
@@ -672,18 +689,8 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
               <>
               <div className="chip-hint">
                 {selIds.length ? <b>{selIds.length} of {total} selected</b> : 'Tap items to select them'}
-                {selIds.length < total && <button onClick={selectAll}>Select all</button>}
                 {selIds.length > 0 && <button onClick={() => setSel([])}>Clear</button>}
               </div>
-              {(multi || selIds.length > 1) && (
-                <div className="sel-chips" role="group" aria-label="Select by type">
-                  {page.frames.length > 0 && <button onClick={() => selectBy('frames')}>Frames · {page.frames.length}</button>}
-                  {page.images.length > 0 && <button onClick={() => selectBy('photos')}>Photos · {page.images.length}</button>}
-                  {page.texts.length > 0 && <button onClick={() => selectBy('text')}>Text · {page.texts.length}</button>}
-                  {page.frames.some((f) => !f.file) && <button onClick={() => selectBy('empty')}>Empty frames · {page.frames.filter((f) => !f.file).length}</button>}
-                  {selIds.length > 0 && <button onClick={() => selectBy('same')}>Same size as first</button>}
-                </div>
-              )}
               </>
             );
           })()}
@@ -693,7 +700,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
               <button className="btn primary" onClick={() => fileRef.current?.click()}><ImageIcon /> Add photos</button>
             </div>
           )}
-          {selBox && selIds.length > 0 && !dragging && !cropping && <FloatingToolbar box={selBox} onPosition={() => setPosOpen(true)} />}
+          {selBox && selIds.length > 0 && !dragging && !cropping && <FloatingToolbar box={selBox} />}
         </PageCanvas>
 
         <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
@@ -701,7 +708,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
 
         <section className={'sheetpanel' + (panel ? ' open' : '')} aria-label={TITLES[shownPanel]} aria-hidden={!panel}>
           <div className="sheetpanel-head">
-            <b>{shownPanel === 'item' ? (selFrame ? 'Frame' : 'Edit photo') : TITLES[shownPanel]}</b>
+            <b>{shownPanel === 'item' ? (selFrame ? 'Frame' : 'Crop') : TITLES[shownPanel]}</b>
             <button className="icon-btn" onClick={() => setPanel(null)} aria-label="Close panel"><Close /></button>
           </div>
           <div className="sheetpanel-body">
@@ -710,6 +717,12 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
             {shownPanel === 'text' && <TextPanel />}
             {shownPanel === 'page' && <PagePanel />}
             {shownPanel === 'item' && <ItemPanel />}
+            {shownPanel === 'cutout' && <CutoutPanel />}
+            {shownPanel === 'color' && <ColorPanel />}
+            {shownPanel === 'arrange' && <ArrangePanel />}
+            {shownPanel === 'copies' && <CopiesPanel />}
+            {shownPanel === 'select' && <SelectPanel />}
+            {shownPanel === 'size' && <SizePanel />}
           </div>
         </section>
 
@@ -721,13 +734,26 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         />
 
         <nav className={'dock' + (cropping ? ' hide' : '')} aria-label="Tools">
-          <div className="dock-in">
-            {NAV.map(([id, label, Ic]) => (
-              <button key={id} className={'dock-btn' + (panel === id ? ' on' : '')} aria-label={label} aria-pressed={panel === id} onClick={() => toggleNav(id)}>
-                <Ic /><span>{label}</span>
-              </button>
-            ))}
-          </div>
+          {ctxTools ? (
+            <div className="dock-in ctx">
+              <button className="ctx-back" aria-label="Done" onClick={() => { setSel([]); setPanel(null); setAdjust(false); }}><Back /></button>
+              <div className="ctx-tools">
+                {ctxTools.map((t) => (
+                  <button key={t.id} className={'ctx-btn' + (t.active ? ' on' : '')} aria-label={t.label} aria-pressed={t.active} onClick={t.on}>
+                    <t.icon /><span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="dock-in">
+              {NAV.map(([id, label, Ic]) => (
+                <button key={id} className={'dock-btn' + (panel === id ? ' on' : '')} aria-label={label} aria-pressed={panel === id} onClick={() => toggleNav(id)}>
+                  <Ic /><span>{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </nav>
 
         {toast && <Toast text={toast.text} kind={toast.kind} onDismiss={() => setToast(null)} />}
@@ -738,10 +764,8 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
             const b = groupBox(pg, [id]); if (!b) return pg;
             return scaleItems(pg, [id], f, b.x, b.y, b.x + (b.w * (1 - f)) / 2, b.y + (b.h * (1 - f)) / 2);
           }, pgIdx)} />}
-        {sheet === 'fill' && <FillGridSheet onClose={() => setSheet(null)} />}
-        {sheet === 'exact' && <ExactSheet onClose={() => setSheet(null)} />}
         {refine && <RefineEdges file={refine.file} bg={refine.bg} onCancel={() => setRefine(null)} onDone={(c) => applyRefined(refine.id, c)} />}
-        {posOpen && <PositionSheet onClose={() => setPosOpen(false)} />}
+        {printerOpen && <SettingsSheet onClose={() => setPrinterOpen(false)} />}
         {gridOpen && <PageGrid project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} onDupMany={dupPages} onDelMany={delPages} onClose={() => setGridOpen(false)} />}
       </div>
     </EdCtx.Provider>
