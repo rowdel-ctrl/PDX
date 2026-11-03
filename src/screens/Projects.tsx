@@ -8,7 +8,7 @@ import { askConfirm } from '../notify';
 import SizeSheet from '../SizeSheet';
 import { newPage } from '../storage';
 import { projectFromTemplate, TEMPLATES } from '../templates';
-import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Grid, Pages as PagesIcon, Plus, Size, More, Tune } from '../icons';
+import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Plus, Size, More, Tune } from '../icons';
 
 export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, tab?: 'images' | 'frames' | 'layout') => void; onPoster: () => void }) {
   const [list, setList] = useState(listProjects);
@@ -51,8 +51,8 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
   };
 
   const starts: [StartKind | 'poster', string, () => React.ReactElement, string][] = [
-    ['id', 'ID photos', FrameIcon, 'c1'], ['prints', 'Photo prints', ImageIcon, 'c2'], ['collage', 'Collage', Grid, 'c3'],
-    ['document', 'Document', PagesIcon, 'c4'], ['poster', 'Tarpapel poster', Size, 'c5'], ['blank', 'Blank', Plus, 'c6'],
+    ['id', 'ID photos', FrameIcon, 'c1'], ['prints', 'Photo prints', ImageIcon, 'c2'],
+    ['poster', 'Tarpapel poster', Size, 'c5'], ['blank', 'Blank', Plus, 'c6'],
   ];
 
   return (
