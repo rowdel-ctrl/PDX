@@ -3,6 +3,7 @@ import type { Project, Quality } from './types';
 import { exportImage } from './images';
 import { borderRect, cropMarkSegments, frameCrop } from './layout';
 import { mmToPt } from './units';
+import { addScaledPage, closeScaled } from './printer';
 
 const hex = (c: string) => {
   const n = parseInt(c.replace('#', ''), 16);
@@ -30,7 +31,7 @@ export async function buildPdf(p: Project, quality: Quality, onProgress?: (n: nu
     onProgress?.(i, p.pages.length);
     const pg = p.pages[i];
     const W = mmToPt(pg.widthMm), H = mmToPt(pg.heightMm);
-    const page = doc.addPage([W, H]);
+    const page = addScaledPage(doc, [W, H]);
     page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: hex(pg.background) });
     for (const im of pg.images) {
       const e = await embed(im.file, im.rot, im.crop);
@@ -79,6 +80,7 @@ export async function buildPdf(p: Project, quality: Quality, onProgress?: (n: nu
       page.drawText(txt, { x: W / 2 - regular.widthOfTextAtSize(txt, size) / 2, y: mmToPt(8), size, font: regular, color: rgb(0.2, 0.2, 0.2) });
     }
   }
+  closeScaled(doc);
   onProgress?.(p.pages.length, p.pages.length);
   doc.setTitle(p.name);
   doc.setCreator('PDX');

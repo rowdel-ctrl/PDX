@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getScale } from '../printer';
 import { findLowRes, LOW_DPI, SHARP_DPI, type LowPhoto } from '../quality';
 import type { Project, Quality } from '../types';
 import { buildPdf } from '../pdf';
@@ -57,6 +58,7 @@ export default function ExportSheet({ project, onClose, onShrink, onShow }: { pr
             <button className="btn" onClick={() => setWarnOpen(false)}>Hide this</button>
           </div>
         )}
+        {getScale() !== 1 && <p className="muted small" style={{ margin: 0 }}>Printer correction is on ({(getScale() * 100).toFixed(1)}%). Change it in Printer check on the home screen.</p>}
         <label className="field">File name
           <div className="suffix"><input value={name} onChange={(e) => setName(e.target.value)} /><span>.pdf</span></div>
         </label>

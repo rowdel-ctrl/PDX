@@ -3,7 +3,7 @@ import { emptyFrame, fillFrames } from './layout';
 import { newId } from './images';
 import { newProject } from './storage';
 
-export type Group = 'ID photos' | 'Photo prints' | 'Collage' | 'Documents';
+export type Group = 'ID photos' | 'Photo prints' | 'Collage' | 'Documents' | 'My templates';
 export interface Template { id: string; name: string; group: Group; w: number; h: number; make: (p: Page) => Page }
 
 const blank = (p: Page, w: number, h: number, margin: number, spacing: number): Page =>

@@ -3,16 +3,18 @@ import { listProjects, removeProject, saveProject, startProject, type StartKind 
 import { deleteImages } from '../images';
 import { fmt, presetOf } from '../units';
 import PageThumb from '../PageThumb';
+import SettingsSheet from '../SettingsSheet';
 import SizeSheet from '../SizeSheet';
 import { newPage } from '../storage';
 import { projectFromTemplate, TEMPLATES } from '../templates';
-import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Grid, Pages as PagesIcon, Plus, Size, More } from '../icons';
+import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Grid, Pages as PagesIcon, Plus, Size, More, Tune } from '../icons';
 
 export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, tab?: 'images' | 'frames' | 'layout') => void; onPoster: () => void }) {
   const [list, setList] = useState(listProjects);
   const [dark, setDark] = useState(document.documentElement.dataset.theme === 'dark');
   const [menu, setMenu] = useState<string | null>(null);
   const [askSize, setAskSize] = useState<StartKind | null>(null);
+  const [printer, setPrinter] = useState(false);
   const refresh = () => setList(listProjects());
   const thumbs = useMemo(() => TEMPLATES.map((t) => ({ t, page: t.make(newPage(t.w, t.h)) })), []);
 
@@ -56,7 +58,10 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
     <div className="screen">
       <header className="topbar">
         <div className="wordmark">PDX</div>
-        <button className="icon-btn" onClick={toggle} aria-label="Toggle dark theme">{dark ? <Sun /> : <Moon />}</button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button className="icon-btn" onClick={() => setPrinter(true)} aria-label="Printer check"><Tune /></button>
+          <button className="icon-btn" onClick={toggle} aria-label="Toggle dark theme">{dark ? <Sun /> : <Moon />}</button>
+        </div>
       </header>
       <main className="scroll pad">
         <h1>What will you make?</h1>
@@ -103,6 +108,7 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
           })}
         </div>
       </main>
+      {printer && <SettingsSheet onClose={() => setPrinter(false)} />}
       {askSize && <SizeSheet title={askSize === 'collage' ? 'New collage' : askSize === 'blank' ? 'New page' : 'New document'} onClose={() => setAskSize(null)} onCreate={(size) => { const k = askSize; setAskSize(null); create(k, size); }} />}
     </div>
   );

@@ -9,6 +9,7 @@ import NumField from './NumField';
 import { GROUPS, TEMPLATES } from './templates';
 import { newPage } from './storage';
 import { PAGE_HIT } from './PageCanvas';
+import { myTemplates, removeMyTemplate, saveMyTemplate } from './usertemplates';
 import { More, Segmented, SliderRow, Swatches, Switch } from './ui';
 import type { Frame, PageImage } from './types';
 import { Back, Crop, Edit, Face, FrameIcon, Plus, RotR, Template, Trash, Type, Wand } from './icons';
@@ -138,9 +139,32 @@ function FramesTab() {
 function TemplatesTab() {
   const ed = useEd();
   const thumbs = useMemo(() => TEMPLATES.map((t) => ({ t, page: t.make(newPage(t.w, t.h)) })), []);
+  const [mine, setMine] = useState(() => myTemplates());
+  const mineThumbs = useMemo(() => mine.map((t) => ({ t, page: t.make(newPage(t.w, t.h)) })), [mine]);
+  const [name, setName] = useState('');
+  const canSave = ed.page.frames.length > 0 || ed.page.texts.length > 0;
+  const save = () => { saveMyTemplate(name || 'My template', ed.page); setMine(myTemplates()); setName(''); ed.say('Saved. Find it under My templates.'); };
   return (
     <>
       <p className="muted small" style={{ margin: 0 }}>Tap a template to use it on this page. You can undo it.</p>
+      <div className="field">My templates
+        {mineThumbs.length > 0 && (
+          <div className="strip">
+            {mineThumbs.map(({ t, page }) => (
+              <span key={t.id} className="tcard-wrap">
+                <button className="tcard" onClick={() => ed.applyTemplate(t)}>
+                  <span className="tcard-thumb"><PageThumb page={page} maxW={78} maxH={92} /></span>
+                  <span className="tcard-name">{t.name}</span>
+                </button>
+                <button className="tcard-x" aria-label={`Delete ${t.name}`} onClick={() => { removeMyTemplate(t.id); setMine(myTemplates()); }}>✕</button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="suffix"><input placeholder="Name this layout" value={name} onChange={(e) => setName(e.target.value)} aria-label="Template name" />
+          <button className="btn tonal" disabled={!canSave} onClick={save}>Save this page</button></div>
+        <span className="muted small">Saves the frames, text and page set-up, not the photos.</span>
+      </div>
       {GROUPS.map((g) => (
         <div key={g} className="field">{g}
           <div className="strip">

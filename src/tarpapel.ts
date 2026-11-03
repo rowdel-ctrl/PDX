@@ -1,5 +1,6 @@
 import { clip, degrees, endPath, PDFDocument, PDFFont, PDFPage, popGraphicsState, pushGraphicsState, rectangle, rgb, StandardFonts } from 'pdf-lib';
 import { mmToPt } from './units';
+import { addScaledPage, closeScaled } from './printer';
 
 export type Orient = 'auto' | 'portrait' | 'landscape';
 export interface TpSettings {
@@ -112,7 +113,7 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
   const X = mmToPt, Y = (y: number) => SH - mmToPt(y);
 
   if (s.guidePage) {
-    const pg = doc.addPage([SW, SH]);
+    const pg = addScaledPage(doc, [SW, SH]);
     const pad = 14, base = p.sheetW >= 200 ? 10 : 8;
     const text = (t: string, x: number, y: number, size: number, f = font, color = INK) => pg.drawText(t, { x: X(x), y: Y(y) - size, size, font: f, color });
     text('Assembly guide', pad, pad, base * 2, bold);
@@ -173,7 +174,7 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
 
   for (let r = 0; r < p.rows; r++) {
     for (let c = 0; c < p.cols; c++) {
-      const page = doc.addPage([SW, SH]);
+      const page = addScaledPage(doc, [SW, SH]);
       const ox = c * p.stepX, oy = r * p.stepY; // origin of this sheet's content in area coords
       const cx = X(m), cy = Y(m + p.ch), cwP = X(p.cw), chP = X(p.ch);
       page.pushOperators(pushGraphicsState(), rectangle(cx, cy, cwP, chP), clip(), endPath());
@@ -234,5 +235,6 @@ export async function buildTarpapelPdf(jpeg: Uint8Array, aspect: number, s0: TpS
   }
   doc.setTitle(name);
   doc.setCreator('PDX');
+  closeScaled(doc);
   return doc.save();
 }
