@@ -4,7 +4,8 @@ import { newId } from './images';
 import { newProject } from './storage';
 
 export type Group = 'ID photos' | 'Photo prints' | 'Collage' | 'Documents' | 'My templates';
-export interface Template { id: string; name: string; group: Group; w: number; h: number; make: (p: Page) => Page }
+/** `adaptive` templates keep the page size you already have and only need to fit on it (`fits` says whether they do). */
+export interface Template { id: string; name: string; group: Group; w: number; h: number; make: (p: Page) => Page; adaptive?: boolean; fits?: (p: Page) => boolean }
 
 const blank = (p: Page, w: number, h: number, margin: number, spacing: number): Page =>
   ({ ...p, widthMm: w, heightMm: h, layout: 'free', images: [], texts: [], frames: [], fill: undefined, marginMm: margin, spacingMm: spacing });
@@ -74,13 +75,36 @@ export const TEMPLATES: Template[] = [
   collage('co-6', '6 photos', (cw, ch, g) => rc(cw, ch, g, 2, 3)),
   collage('co-hero', '1 big + 3', (cw, ch, g) => { const h1 = (ch - g) * 0.62, h2 = ch - g - h1, w = (cw - 2 * g) / 3; return [[0, 0, cw, h1], [0, h1 + g, w, h2], [w + g, h1 + g, w, h2], [2 * (w + g), h1 + g, w, h2]]; }),
   {
-    id: 'doc-idcard', name: 'ID card front + back · A4', group: 'Documents', w: 210, h: 297,
+    id: 'doc-idcard', name: 'ID card front + back · any page size', group: 'Documents', w: 210, h: 297, adaptive: true,
+    fits: (p) => idCardSpots(p) !== null,
     make: (p) => {
-      const b = blank(p, 210, 297, 10, 5), x = (210 - 85.6) / 2, y1 = 50, y2 = 50 + 54 + 36;
-      return { ...b, frames: fromRects(b, [[x, y1, 85.6, 54], [x, y2, 85.6, 54]]), texts: [text('Front', x, y1 - 8, 210, 297), text('Back', x, y2 - 8, 210, 297)] };
+      const spots = idCardSpots(p);
+      if (!spots) return p;
+      const { fill: _f, ...rest } = p; void _f;
+      return {
+        ...rest, layout: 'free', images: [], frames: fromRects(p, spots.map((s) => [s.x, s.y, ID_CARD_W, ID_CARD_H] as [number, number, number, number])),
+        texts: [text('Front', spots[0].x, spots[0].y - 8, p.widthMm, p.heightMm), text('Back', spots[1].x, spots[1].y - 8, p.widthMm, p.heightMm)],
+      };
     },
   },
 ];
+
+export const ID_CARD_W = 85.6, ID_CARD_H = 54;
+/** Where the front and back of an ID card go on a page: stacked on tall pages, side by side on wide ones. Null if the page is too small. */
+export function idCardSpots(p: Page): { x: number; y: number }[] | null {
+  const W = p.widthMm, H = p.heightMm, m = 8, gap = 14, lab = 8;
+  const stackH = ID_CARD_H * 2 + gap + lab * 2, rowW = ID_CARD_W * 2 + gap;
+  const canStack = W >= ID_CARD_W + 2 * m && H >= stackH + 2 * m, canRow = W >= rowW + 2 * m && H >= ID_CARD_H + lab + 2 * m;
+  if (canStack && (H >= W || !canRow)) {
+    const x = (W - ID_CARD_W) / 2, y1 = Math.max(m + lab, Math.min((H - stackH) / 2 + lab, H * 0.18 + lab));
+    return [{ x, y: y1 }, { x, y: y1 + ID_CARD_H + gap + lab }];
+  }
+  if (canRow) {
+    const x1 = (W - rowW) / 2, y = Math.max(m + lab, Math.min((H - ID_CARD_H) / 2, H * 0.25));
+    return [{ x: x1, y }, { x: x1 + ID_CARD_W + gap, y }];
+  }
+  return null;
+}
 
 export const GROUPS: Group[] = ['ID photos', 'Photo prints', 'Collage', 'Documents'];
 

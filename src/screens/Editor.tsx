@@ -512,6 +512,11 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     editPage(() => out); setSel([]);
   };
   const applyTemplate = (t: Template) => {
+    if (t.adaptive) {
+      if (t.fits && !t.fits(page)) { say(`This page is too small for ${t.name.split(' · ')[0]}`); return; }
+      edit((p) => ({ ...p, pages: p.pages.map((pg, k) => (k === pi ? t.make(pg) : pg)) }));
+      setSel([]); say(`Applied ${t.name.split(' · ')[0]}`); return;
+    }
     edit((p) => ({ ...p, widthMm: t.w, heightMm: t.h, pages: p.pages.map((pg, k) => (k === pi ? t.make(pg) : pg)) }));
     setSel([]); say(`Applied ${t.name}`);
   };
