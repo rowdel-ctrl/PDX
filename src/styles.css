@@ -409,3 +409,4 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .psec>b{font-family:var(--head);font-weight:500;font-size:14px;color:var(--accent-text)}
 .photo-seg{margin-bottom:2px}
 .photo-sections .panel-body{padding:10px 0 0}
+.save-row{display:flex;gap:8px}.save-row .btn:first-child{flex:2}.save-row .btn:last-child{flex:1}

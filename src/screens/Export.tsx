@@ -85,8 +85,10 @@ export default function ExportSheet({ project, onClose, onShrink, onShow }: { pr
             : <div className="seg">{([[100, 'Small'], [150, 'Normal'], [300, 'Sharp']] as [number, string][]).map(([d, l]) => <button key={d} className={dpi === d ? 'on' : ''} onClick={() => setDpi(d)}>{l}</button>)}</div>}
         </div>
         {fmt0 !== 'pdf' && <span className="muted small">{dpi} dots per inch. Sharp is best for printing; Small is best for messaging.</span>}
-        <button className="btn primary wide" disabled={!!busy} onClick={() => run('save')}><Download /> Save to Files</button>
-        <button className="btn wide" disabled={!!busy} onClick={() => run('share')}><Share /> Share (WhatsApp, Email, other apps)</button>
+        <div className="save-row">
+          <button className="btn primary" disabled={!!busy} onClick={() => run('save')}><Download /> Save to Files</button>
+          <button className="btn tonal" disabled={!!busy} onClick={() => run('share')} aria-label="Share to WhatsApp, Email or other apps"><Share /> Share</button>
+        </div>
         {busy && <Banner kind="busy" text={busy} />}
         {msg && <Banner kind={/fail|could not/i.test(msg) ? 'warn' : 'ok'} text={msg} />}
       </div>
