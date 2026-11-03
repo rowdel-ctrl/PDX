@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayItem } from '../types';
 import { listProjects, newPage, saveProject } from '../storage';
-import { applyLayout, cellCount, gridBox, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
+import { applyLayout, cellCount, gridBox, LAYOUTS, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
 import { alignItems, distributeItems, findItem, gapItems, fillGrid, groupBox, mapSelected, reorder, scaleItems, selectWhere, setBoxMm, type SelectMode, type AlignMode, type AnyItem } from '../arrange';
 import { deleteImages, evenLight as evenLightFile, FULL, importImage, makeCutout, newId } from '../images';
 import RefineEdges from '../RefineEdges';
@@ -17,7 +17,8 @@ import { FloatingToolbar, PositionSheet } from '../Toolbar';
 import { ExactSheet, FillGridSheet } from '../sheets';
 import { AddPanel, ItemPanel, LayoutPanel, PagePanel, TextPanel } from '../panels';
 import { EdCtx, type AddTab, type Ed, type PanelId } from '../editorContext';
-import type { Template } from '../templates';
+import { TEMPLATES, type Template } from '../templates';
+import PageThumb from '../PageThumb';
 import { presetOf } from '../units';
 import { Back, Checklist, Close, Hand, Grid, Plus, Redo, Share, Tune, Type, Undo, Image as ImageIcon } from '../icons';
 
@@ -216,7 +217,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   };
 
   /** Put photos on the page: empty frames first, then loose on frame pages, or layout slots, then new pages. */
-  const placeItems = (items: TrayItem[], mode: 'flow' | 'one' | 'separate' = 'flow') => {
+  const placeItems = (items: TrayItem[], mode: 'flow' | 'one' | 'separate' = 'flow', force?: LayoutId) => {
     const idx = pi;
     if (mode === 'separate') { placeSeparate(items); return; }
     let extra = 0, placed = 0;
@@ -241,7 +242,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         let layoutNow = pg.layout;
         if (mode === 'one' && !hasFrames) {
           const need = imgs.length + queue.length;
-          layoutNow = need <= 1 ? '1' : need <= 2 ? '2x1' : need <= 4 ? '2x2' : need <= 6 ? '2x3' : need <= 9 ? '3x3' : 'free';
+          layoutNow = force ?? (need <= 1 ? '1' : need <= 2 ? '2x1' : need <= 4 ? '2x2' : need <= 6 ? '2x3' : need <= 9 ? '3x3' : 'free');
         }
         const total = imgs.length + queue.length;
         const cap = mode === 'one' ? 9999 : hasFrames ? 99 : cellCount(pg.layout);
@@ -295,7 +296,33 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         : [{ value: 'one', label: 'All on this page', hint: 'Arranged in a neat grid' }, { value: 'separate', label: 'Each on its own page', hint: `Makes ${items.length} pages` }],
     });
     if (!choice) { say(`${items.length} photos are in Your photos. Tap one to add it.`); return; }
-    placeItems(items, choice);
+    if (choice !== 'one') { placeItems(items, choice); return; }
+    // all on one page: suggest the presets that suit this many photos
+    const n = items.length, W = page.widthMm, H = page.heightMm;
+    const dummy = (pg: Page, count: number): Page => ({ ...pg, images: Array.from({ length: count }, (_, i) => ({ id: 'd' + i, file: '', aspect: 1, rot: 0, crop: FULL, x: 0, y: 0, w: 1, h: 1 })) });
+    type Sug = { value: string; label: string; hint: string; thumb: React.ReactNode };
+    const sugs: Sug[] = [];
+    const fitting = LAYOUTS.filter((l) => l.cols * l.rows >= n).sort((a, b) => a.cols * a.rows - b.cols * b.rows).slice(0, 2);
+    for (const l of fitting) {
+      const base = { ...page, layout: l.id, frames: [], texts: [], fill: undefined };
+      sugs.push({ value: 'layout:' + l.id, label: `${l.cols} × ${l.rows} grid`, hint: l.cols * l.rows === n ? 'Fits exactly' : `${l.cols * l.rows - n} empty ${l.cols * l.rows - n === 1 ? 'cell' : 'cells'} left`, thumb: <PageThumb page={applyLayout(dummy(base, n))} maxW={42} maxH={50} /> });
+    }
+    if (!fitting.length) {
+      const free = { ...page, layout: 'free' as LayoutId, frames: [], texts: [] };
+      const withBoxes: Page = { ...dummy(free, n), images: Array.from({ length: n }, (_, i) => ({ id: 'd' + i, file: '', aspect: 1, rot: 0, crop: FULL, ...gridBox(page, 1, i, n) })) };
+      sugs.push({ value: 'layout:free', label: 'Neat grid', hint: `${n} photos in an even grid`, thumb: <PageThumb page={withBoxes} maxW={42} maxH={50} /> });
+    }
+    for (const t of TEMPLATES.filter((x) => x.group === 'Collage' && Math.abs(x.w - W) < 1 && Math.abs(x.h - H) < 1)) {
+      const made = t.make(page);
+      if (made.frames.length === n) sugs.push({ value: 'tpl:' + t.id, label: t.name, hint: 'Collage', thumb: <PageThumb page={made} maxW={42} maxH={50} /> });
+    }
+    const pick = sugs.length > 1 ? await askChoice<string>({ title: `Layout for ${n} photos`, body: 'Suggested for this many photos. You can change it later in Layout.', options: sugs.map((x, i) => ({ value: x.value, label: x.label + (i === 0 ? '  ·  suggested' : ''), hint: x.hint, thumb: x.thumb })) }) : sugs[0]?.value ?? null;
+    if (!pick) { say(`${n} photos are in Your photos. Tap one to add it.`); return; }
+    if (pick.startsWith('tpl:')) {
+      const t = TEMPLATES.find((x) => x.id === pick.slice(4))!;
+      edit((p) => ({ ...p, pages: p.pages.map((pg, k) => (k === pi ? t.make(pg) : pg)) }));
+      placeItems(items, 'flow');
+    } else placeItems(items, 'one', pick.slice(7) as LayoutId);
   };
   const addFromLibrary = (t: TrayItem) => {
     if (selFrame && !selFrame.file) { placePhoto(selFrame.id, t); return; }

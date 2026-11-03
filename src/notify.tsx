@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Check, Close } from './icons';
 
 export type ToastKind = 'ok' | 'warn' | 'busy';
@@ -60,11 +60,11 @@ export function ConfirmHost() {
 }
 
 // ---------------------------------------------------------------- choice dialog
-interface Pick<T extends string> { title: string; body?: string; options: { value: T; label: string; hint?: string }[]; resolve: (v: T | null) => void }
+interface Pick<T extends string> { title: string; body?: string; options: { value: T; label: string; hint?: string; thumb?: ReactNode }[]; resolve: (v: T | null) => void }
 let pushPick: ((a: Pick<string>) => void) | null = null;
 
 /** Ask the person to choose one of a few options. Resolves with the value, or null if they cancel. */
-export function askChoice<T extends string>(o: { title: string; body?: string; options: { value: T; label: string; hint?: string }[] }): Promise<T | null> {
+export function askChoice<T extends string>(o: { title: string; body?: string; options: { value: T; label: string; hint?: string; thumb?: ReactNode }[] }): Promise<T | null> {
   return new Promise((resolve) => {
     if (!pushPick) { resolve(o.options[0]?.value ?? null); return; }
     pushPick({ ...o, resolve: resolve as (v: string | null) => void });
@@ -84,7 +84,8 @@ export function ChoiceHost() {
         <div className="dlg-choices">
           {a.options.map((o, i) => (
             <button key={o.value} className={'choice' + (i === 0 ? ' first' : '')} onClick={() => done(o.value)}>
-              <span>{o.label}</span>{o.hint && <small>{o.hint}</small>}
+              {o.thumb && <span className="choice-thumb">{o.thumb}</span>}
+              <span className="choice-tx"><span>{o.label}</span>{o.hint && <small>{o.hint}</small>}</span>
             </button>
           ))}
         </div>
