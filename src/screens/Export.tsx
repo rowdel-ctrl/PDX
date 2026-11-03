@@ -86,8 +86,7 @@ export default function ExportSheet({ project, onClose, onShrink, onShow }: { pr
         </div>
         {fmt0 !== 'pdf' && <span className="muted small">{dpi} dots per inch. Sharp is best for printing; Small is best for messaging.</span>}
         <button className="btn primary wide" disabled={!!busy} onClick={() => run('save')}><Download /> Save to Files</button>
-        <button className="btn wide" disabled={!!busy} onClick={() => run('share')}><Share /> Share or send to cloud</button>
-        <span className="muted small">Share opens your phone's share sheet. Google Drive, Dropbox, WhatsApp and email appear there if the app is installed.</span>
+        <button className="btn wide" disabled={!!busy} onClick={() => run('share')}><Share /> Share (WhatsApp, Email, other apps)</button>
         {busy && <Banner kind="busy" text={busy} />}
         {msg && <Banner kind={/fail|could not/i.test(msg) ? 'warn' : 'ok'} text={msg} />}
       </div>
