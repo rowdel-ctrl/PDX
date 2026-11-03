@@ -11,17 +11,17 @@ import PageStrip from '../PageStrip';
 import PageGrid from '../PageGrid';
 import ExportSheet from './Export';
 import { FloatingToolbar, PositionSheet } from '../Toolbar';
-import { AddPanel, ItemPanel, LayoutPanel, PagePanel, StylePanel, TextPanel } from '../panels';
+import { AddPanel, ItemPanel, LayoutPanel, PagePanel, TextPanel } from '../panels';
 import { EdCtx, type AddTab, type Ed, type PanelId } from '../editorContext';
 import type { Template } from '../templates';
 import { presetOf } from '../units';
-import { Back, Checklist, Close, Grid, Palette, Plus, Redo, Share, Tune, Type, Undo } from '../icons';
+import { Back, Checklist, Close, Grid, Plus, Redo, Share, Tune, Type, Undo, Image as ImageIcon } from '../icons';
 
 export type Tab = PanelId;
 const NAV: [PanelId, string, () => React.ReactElement][] = [
-  ['add', 'Add', Plus], ['layout', 'Layout', Grid], ['text', 'Text', Type], ['style', 'Style', Palette], ['page', 'Page', Tune],
+  ['add', 'Add', Plus], ['layout', 'Layout', Grid], ['text', 'Text', Type], ['page', 'Page', Tune],
 ];
-const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Layout', text: 'Text', style: 'Style', page: 'Page settings', item: 'Edit' };
+const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Layout', text: 'Text', page: 'Page', item: 'Edit' };
 
 const filesOf = (p: Project) => new Set([
   ...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]),
@@ -51,6 +51,8 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   const [selTray, setSelTray] = useState<string | null>(null);
   const [adjust, setAdjust] = useState(false);
   const [autoFace, setAutoFace] = useState(true);
+  const [sameAll, setSameAll] = useState(true);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState<string | null>(null);
   const [selBox, setSelBox] = useState<SelBox | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -140,9 +142,12 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
   const centerAll = async () => { for (const f of page.frames) if (f.file) await centerFace(f.id, true); say('Faces centered'); };
 
   const placePhoto = (fid: string, t: TrayItem) => {
-    updateFrame(fid, { file: t.file, aspect: t.aspect, rot: 0, zoom: 1, cx: 0.5, cy: 0.5 });
+    const fill = { file: t.file, aspect: t.aspect, rot: 0, zoom: 1, cx: 0.5, cy: 0.5 };
+    const every = sameAll && page.frames.length > 1 && page.frames.every((f) => !f.file);   // first photo on an empty sheet goes in every frame
+    const ids = every ? page.frames.map((f) => f.id) : [fid];
+    editPage((pg) => ({ ...pg, frames: pg.frames.map((f) => (ids.includes(f.id) ? clampFrame({ ...f, ...fill }, pg.widthMm, pg.heightMm) : f)) }));
     setSel([fid]);
-    if (autoFace) centerFace(fid, true);
+    if (autoFace) for (const i of ids) centerFace(i, true);
   };
 
   const addFrame = () => {
@@ -195,13 +200,15 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
       let k = idx;
       while (queue.length) {
         const pg = pages[k];
+        const same = sameAll && items.length === 1 && pg.frames.length > 1 && pg.frames.every((f) => !f.file);   // one photo on an empty sheet fills every frame
         const frames = pg.frames.map((f) => {
           if (!f.file && queue.length) {
-            const it = queue.shift()!; placed++; filled.push({ page: k, id: f.id });
+            const it = same ? queue[0] : queue.shift()!; if (!same) placed++; filled.push({ page: k, id: f.id });
             return { ...f, file: it.file, aspect: it.aspect, rot: 0, zoom: 1, cx: 0.5, cy: 0.5 };
           }
           return f;
         });
+        if (same) { queue.shift(); placed++; }
         const imgs = [...pg.images];
         const cap = pg.frames.length ? 0 : cellCount(pg.layout);   // pages built from frames take photos only into frames
         while (queue.length && imgs.length < cap) {
@@ -389,7 +396,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     addPhotos, addFromLibrary, removeFromLibrary, selTray, setSelTray, hit, setOver,
     fsize, setFsize: (w, h) => setFs({ w, h }), addFrame, fillWithFrames, clearFrames: () => { editPage((pg) => ({ ...pg, frames: [] })); setSel([]); },
     placePhoto, updateFrame: (fid, patch) => updateFrame(fid, patch), resizeFrame, rotateFrame, copyToAll,
-    centerFace: (fid) => { centerFace(fid); }, centerAll: () => { centerAll(); }, autoFace, setAutoFace, adjust, setAdjust,
+    centerFace: (fid) => { centerFace(fid); }, centerAll: () => { centerAll(); }, autoFace, setAutoFace, sameAll, setSameAll, adjust, setAdjust,
     rotateImage, setCropSide, resetCrop, fillCell, fitCell, addText, updateText, setLayout, relayout, fillWith, applyTemplate,
     deleteSel, duplicateSel, toggleLock, align, distribute, order,
     addPage, dupPage, delPage, movePage, goPage, openGrid: () => setGridOpen(true),
@@ -421,9 +428,16 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         >
           <button className={'fab-small' + (multi ? ' on' : '')} aria-pressed={multi} aria-label="Select multiple items" onClick={() => { setMulti(!multi); if (multi) setSel(sel.slice(0, 1)); }}><Checklist /></button>
           {multi && <div className="chip-hint">Tap items to select them</div>}
+          {!panel && !selIds.length && !page.images.length && !page.texts.length && page.frames.every((f) => !f.file) && (
+            <div className="empty-card">
+              <span>{page.frames.length ? 'Add a photo. It fills every frame.' : 'Start by adding your photos'}</span>
+              <button className="btn primary" onClick={() => fileRef.current?.click()}><ImageIcon /> Add photos</button>
+            </div>
+          )}
           {selBox && selIds.length > 0 && !dragging && <FloatingToolbar box={selBox} onPosition={() => setPosOpen(true)} />}
         </PageCanvas>
 
+        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
         <PageStrip project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} onGrid={() => setGridOpen(true)} />
 
         {panel && (
@@ -436,7 +450,6 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
               {panel === 'add' && <AddPanel />}
               {panel === 'layout' && <LayoutPanel />}
               {panel === 'text' && <TextPanel />}
-              {panel === 'style' && <StylePanel />}
               {panel === 'page' && <PagePanel />}
               {panel === 'item' && <ItemPanel />}
             </div>

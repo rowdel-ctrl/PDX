@@ -51,3 +51,13 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
     </div>
   );
 }
+
+/** Collapsed by default: keeps advanced options one tap away without cluttering the panel. */
+export function More({ title = 'More options', children }: { title?: string; children: ReactNode }) {
+  return (
+    <details className="more">
+      <summary>{title}</summary>
+      <div className="more-body">{children}</div>
+    </details>
+  );
+}

@@ -3,7 +3,7 @@ import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayIte
 import type { AlignMode } from './arrange';
 import type { Template } from './templates';
 
-export type PanelId = 'add' | 'layout' | 'text' | 'style' | 'page' | 'item';
+export type PanelId = 'add' | 'layout' | 'text' | 'page' | 'item';
 export type AddTab = 'photos' | 'frames' | 'templates';
 
 export interface Ed {
@@ -31,6 +31,7 @@ export interface Ed {
   copyToAll: (f: Frame) => void;
   centerFace: (id: string) => void; centerAll: () => void;
   autoFace: boolean; setAutoFace: (b: boolean) => void;
+  sameAll: boolean; setSameAll: (b: boolean) => void;
   adjust: boolean; setAdjust: (b: boolean) => void;
   // images
   rotateImage: (im: PageImage, dir: 1 | -1) => void;

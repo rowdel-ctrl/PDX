@@ -183,3 +183,19 @@ h2.sec{font-size:22px;line-height:28px;font-weight:400;margin:24px 0 8px}
 .pager{display:flex;justify-content:center;align-items:center;gap:12px;font-weight:500;padding:8px 0}
 .tp-prev{width:100%;max-height:42vh;background:var(--desk);border-radius:16px;margin:12px 0}
 .warn{color:var(--error);font-weight:500;font-size:13px}
+
+/* simplified panels */
+.more{border-top:1px solid var(--outline-variant);padding-top:4px}
+.more summary{list-style:none;cursor:pointer;min-height:48px;display:flex;align-items:center;justify-content:space-between;font-weight:500;font-size:14px;color:var(--primary)}
+.more summary::-webkit-details-marker{display:none}
+.more summary::after{content:"";width:10px;height:10px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);margin-right:6px;transition:transform .15s}
+.more[open] summary::after{transform:rotate(-135deg)}
+.more-body{display:flex;flex-direction:column;gap:14px;padding:4px 0 8px}
+.back-row{display:flex;align-items:center;gap:8px;border:0;background:none;color:var(--on-surface);font-weight:500;font-size:16px;min-height:40px;padding:0;align-self:flex-start}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.row3 .btn{padding:0 8px;font-size:13px}
+.lcards{display:flex;gap:8px;flex-wrap:wrap}
+.lcard{width:64px;height:76px;border-radius:12px;border:1px solid var(--outline);background:none;color:var(--on-surface-variant);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-weight:500;font-size:14px}
+.lcard.on{background:var(--secondary-container);color:var(--on-secondary-container);border-color:transparent}
+.empty-card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;display:flex;flex-direction:column;align-items:center;gap:10px;background:var(--sc-high);padding:16px 20px;border-radius:20px;box-shadow:0 3px 12px rgba(0,0,0,.25);text-align:center;max-width:240px}
+.empty-card .btn{width:100%}

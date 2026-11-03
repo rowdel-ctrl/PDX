@@ -2,15 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Page, TrayItem, Unit } from './types';
 import { useEd } from './editorContext';
 import { cellCount, fitCount, fillFrames, LAYOUTS } from './layout';
-import { fmt, MAX_MM, MIN_MM, presetOf, PRESETS, toMm } from './units';
+import { fmt, MAX_MM, MIN_MM, presetOf, PRESETS } from './units';
 import { PhotoThumb } from './PageThumb';
 import PageThumb from './PageThumb';
 import NumField from './NumField';
 import { GROUPS, TEMPLATES } from './templates';
 import { newPage } from './storage';
 import { PAGE_HIT } from './PageCanvas';
-import { Segmented, Swatches, SliderRow, Switch } from './ui';
-import { Face, Grid as GridIcon, Plus, RotR, Trash } from './icons';
+import { More, Segmented, SliderRow, Swatches, Switch } from './ui';
+import { Back, Face, FrameIcon, Plus, RotR, Template, Trash, Type } from './icons';
 
 export const FRAME_SIZES: [string, number, number][] = [
   ['Passport 35×45', 35, 45], ['1×1 in', 25.4, 25.4], ['1.5×1.5 in', 38.1, 38.1], ['2×2 in', 50.8, 50.8], ['3×4 cm', 30, 40], ['Wallet 2×3 in', 50.8, 76.2],
@@ -21,6 +21,10 @@ const PHOTO_SIZES: [string, number, number][] = [
 
 const Chip = ({ on, onClick, children, disabled }: { on?: boolean; onClick: () => void; children: React.ReactNode; disabled?: boolean }) => (
   <button className={'chip' + (on ? ' on' : '')} aria-pressed={!!on} disabled={disabled} onClick={onClick}>{children}</button>
+);
+
+const SubHead = ({ title, onBack }: { title: string; onBack: () => void }) => (
+  <button className="back-row" onClick={onBack}><Back /> {title}</button>
 );
 
 // ---------------------------------------------------------------- Add
@@ -75,25 +79,28 @@ function Library() {
     }
   };
   const cancel = () => { window.clearTimeout(timer.current); timer.current = 0; setGhost(null); ed.setOver(null); };
+  const hasFrames = ed.page.frames.length > 0;
 
   return (
     <>
       <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { ed.addPhotos(e.target.files); e.target.value = ''; }} />
-      <div className="row" style={{ alignItems: 'center' }}>
-        <button className="btn primary" onClick={() => fileRef.current?.click()}><Plus /> Add photos</button>
-        <span className="muted small grow">{proj.tray.length ? 'Tap a photo to add it. Hold and drag onto a frame.' : 'Photos you add live here, so you can reuse them.'}</span>
-      </div>
-      {(
-        <div className="strip" ref={strip}>
-          {proj.tray.map((t) => (
-            <div key={t.id} className="strip-item tray" role="button" aria-label="Photo. Tap to add" onPointerDown={(e) => down(e, t)} onPointerMove={move} onPointerUp={(e) => up(e, t)} onPointerCancel={cancel} onContextMenu={(e) => e.preventDefault()}>
-              <PhotoThumb file={t.file} size={64} />
-              <button className="x" aria-label="Remove from library" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); ed.removeFromLibrary(t.id); }}>×</button>
-            </div>
-          ))}
-        </div>
+      <button className="btn primary wide" style={{ marginTop: 0 }} onClick={() => fileRef.current?.click()}><Plus /> Add photos from phone</button>
+      {proj.tray.length > 0 && (
+        <>
+          <span className="muted small">
+            Your photos. Tap one to add it{hasFrames ? ', or hold and drag it onto a frame' : ''}.
+            {selFrame && !selFrame.file ? ' A frame is selected, so it goes there.' : ''}
+          </span>
+          <div className="strip" ref={strip}>
+            {proj.tray.map((t) => (
+              <div key={t.id} className="strip-item tray" role="button" aria-label="Photo. Tap to add" onPointerDown={(e) => down(e, t)} onPointerMove={move} onPointerUp={(e) => up(e, t)} onPointerCancel={cancel} onContextMenu={(e) => e.preventDefault()}>
+                <PhotoThumb file={t.file} size={64} />
+                <button className="x" aria-label="Remove from your photos" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); ed.removeFromLibrary(t.id); }}>×</button>
+              </div>
+            ))}
+          </div>
+        </>
       )}
-      {selFrame && !selFrame.file && proj.tray.length > 0 && <span className="muted small">A frame is selected: tapping a photo puts it in that frame.</span>}
       {ghost && <div className="ghost" style={{ left: ghost.x, top: ghost.y }}><PhotoThumb file={ghost.t.file} size={72} /></div>}
     </>
   );
@@ -102,25 +109,28 @@ function Library() {
 function FramesTab() {
   const ed = useEd();
   const { page, unit, fsize: size } = ed;
+  const n = fillFrames(page, size.w, size.h).length;
   return (
     <>
-      <div className="field">Frame size
-        <div className="chips">
-          {FRAME_SIZES.map(([n, w, h]) => <Chip key={n} on={Math.abs(size.w - w) < 0.2 && Math.abs(size.h - h) < 0.2} onClick={() => ed.setFsize(w, h)}>{n}</Chip>)}
-        </div>
-        <div className="row">
-          <NumField label="Width" mm={size.w} unit={unit} onCommit={(mm) => ed.setFsize(mm, size.h)} />
-          <NumField label="Height" mm={size.h} unit={unit} onCommit={(mm) => ed.setFsize(size.w, mm)} />
-          <button className="btn" onClick={() => ed.setFsize(size.h, size.w)} aria-label="Swap width and height">⇄</button>
-        </div>
+      <p className="muted small" style={{ margin: 0 }}>1. Pick a size. 2. Fill the page with frames. 3. Add a photo. It goes in every frame and the face is centered.</p>
+      <div className="chips">
+        {FRAME_SIZES.map(([name, w, h]) => <Chip key={name} on={Math.abs(size.w - w) < 0.2 && Math.abs(size.h - h) < 0.2} onClick={() => ed.setFsize(w, h)}>{name}</Chip>)}
       </div>
-      <div className="row">
-        <button className="btn primary" onClick={ed.addFrame}><Plus /> Add frame</button>
-        <button className="btn tonal" onClick={ed.fillWithFrames}>Fill page ({fillFrames(page, size.w, size.h).length})</button>
-        {page.frames.length > 0 && <button className="btn danger-outline" onClick={ed.clearFrames}><Trash /> Clear</button>}
-      </div>
-      <Switch label="Auto-center face when placing a photo" checked={ed.autoFace} onChange={ed.setAutoFace} />
-      {page.frames.some((f) => f.file) && <button className="btn tonal" onClick={ed.centerAll}><Face /> Center faces in all frames</button>}
+      <button className="btn primary wide" style={{ marginTop: 0 }} disabled={!n} onClick={ed.fillWithFrames}>{n ? `Fill page with ${n} frames` : 'This size does not fit'}</button>
+      <button className="btn tonal" onClick={ed.addFrame}><Plus /> Add just one frame</button>
+      <More>
+        <div className="field">Custom frame size
+          <div className="row">
+            <NumField label="Width" mm={size.w} unit={unit} onCommit={(mm) => ed.setFsize(mm, size.h)} />
+            <NumField label="Height" mm={size.h} unit={unit} onCommit={(mm) => ed.setFsize(size.w, mm)} />
+            <button className="btn" onClick={() => ed.setFsize(size.h, size.w)} aria-label="Swap width and height">⇄</button>
+          </div>
+        </div>
+        <Switch label="Same photo in every frame" hint="When all frames are empty" checked={ed.sameAll} onChange={ed.setSameAll} />
+        <Switch label="Center faces automatically" checked={ed.autoFace} onChange={ed.setAutoFace} />
+        {page.frames.some((f) => f.file) && <button className="btn tonal" onClick={ed.centerAll}><Face /> Center faces in all frames</button>}
+        {page.frames.length > 0 && <button className="btn danger-outline" onClick={ed.clearFrames}><Trash /> Remove all frames</button>}
+      </More>
     </>
   );
 }
@@ -130,7 +140,7 @@ function TemplatesTab() {
   const thumbs = useMemo(() => TEMPLATES.map((t) => ({ t, page: t.make(newPage(t.w, t.h)) })), []);
   return (
     <>
-      <p className="muted small" style={{ margin: 0 }}>Applying a template replaces what is on this page. You can undo it.</p>
+      <p className="muted small" style={{ margin: 0 }}>Tap a template to use it on this page. You can undo it.</p>
       {GROUPS.map((g) => (
         <div key={g} className="field">{g}
           <div className="strip">
@@ -149,36 +159,63 @@ function TemplatesTab() {
 
 export function AddPanel() {
   const ed = useEd();
+  if (ed.addTab === 'frames') return <div className="panel-body"><SubHead title="ID photo frames" onBack={() => ed.setAddTab('photos')} /><FramesTab /></div>;
+  if (ed.addTab === 'templates') return <div className="panel-body"><SubHead title="Templates" onBack={() => ed.setAddTab('photos')} /><TemplatesTab /></div>;
   return (
     <div className="panel-body">
-      <Segmented value={ed.addTab} onChange={ed.setAddTab} options={[['photos', 'Photos'], ['frames', 'Frames'], ['templates', 'Templates']]} />
-      {ed.addTab === 'photos' && <Library />}
-      {ed.addTab === 'frames' && <FramesTab />}
-      {ed.addTab === 'templates' && <TemplatesTab />}
+      <Library />
+      <div className="field">Also add
+        <div className="row3">
+          <button className="btn tonal" onClick={() => ed.setAddTab('frames')}><FrameIcon /> ID frames</button>
+          <button className="btn tonal" onClick={() => ed.setAddTab('templates')}><Template /> Templates</button>
+          <button className="btn tonal" onClick={ed.addText}><Type /> Text</button>
+        </div>
+      </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------- Layout
 
+const LayoutIcon = ({ cols, rows }: { cols: number; rows: number }) => {
+  const g = 3, w = (30 - g * (cols + 1)) / cols, h = (38 - g * (rows + 1)) / rows;
+  return (
+    <svg width="30" height="38" viewBox="0 0 30 38" aria-hidden>
+      <rect x="0.5" y="0.5" width="29" height="37" rx="2" fill="none" stroke="currentColor" opacity=".5" />
+      {Array.from({ length: rows }).flatMap((_, r) => Array.from({ length: cols }).map((__, c) => (
+        <rect key={`${r}${c}`} x={g + c * (w + g)} y={g + r * (h + g)} width={w} height={h} rx="1" fill="currentColor" />
+      )))}
+    </svg>
+  );
+};
+
 export function LayoutPanel() {
   const ed = useEd();
   const { page, unit } = ed;
   return (
     <div className="panel-body">
-      <div className="chips">
-        {LAYOUTS.map((l) => <Chip key={l.id} on={page.layout === l.id} onClick={() => ed.setLayout(l.id)}>{l.label}</Chip>)}
-        {page.layout === 'free' && <Chip on onClick={() => undefined}>Free</Chip>}
+      <div className="field" style={{ marginTop: 0 }}>Photos on this page
+        <div className="lcards">
+          {LAYOUTS.map((l) => {
+            const n = l.cols * l.rows;
+            return (
+              <button key={l.id} className={'lcard' + (page.layout === l.id ? ' on' : '')} aria-pressed={page.layout === l.id} aria-label={`${n} ${n === 1 ? 'photo' : 'photos'}`} onClick={() => ed.setLayout(l.id)}>
+                <LayoutIcon cols={l.cols} rows={l.rows} /><span>{n}</span>
+              </button>
+            );
+          })}
+          {page.layout === 'free' && <button className="lcard on" aria-pressed><span style={{ fontSize: 12 }}>Free</span></button>}
+        </div>
       </div>
-      <SliderRow label="Margins" value={page.marginMm} min={0} max={50} suffix={`${fmt(page.marginMm, unit)} ${unit}`} onChange={(v) => ed.editPage((pg) => ed.relayout({ ...pg, marginMm: v }))} />
-      <SliderRow label="Spacing" value={page.spacingMm} min={0} max={30} suffix={`${fmt(page.spacingMm, unit)} ${unit}`} onChange={(v) => ed.editPage((pg) => ed.relayout({ ...pg, spacingMm: v }))} />
-      <div className="field">Print a photo at exact size (fills the page with copies)
+      <SliderRow label="Gap" value={page.spacingMm} min={0} max={30} suffix={`${fmt(page.spacingMm, unit)} ${unit}`} onChange={(v) => ed.editPage((pg) => ed.relayout({ ...pg, spacingMm: v }))} />
+      <SliderRow label="Edge" value={page.marginMm} min={0} max={50} suffix={`${fmt(page.marginMm, unit)} ${unit}`} onChange={(v) => ed.editPage((pg) => ed.relayout({ ...pg, marginMm: v }))} />
+      <More title="Print a photo at a set size">
+        <span className="muted small">Fills the page with copies of the selected photo (or the first one) at an exact size.</span>
         <div className="chips">
           {PHOTO_SIZES.map(([n, w, h]) => { const c = fitCount(page, w, h); return <Chip key={n} disabled={!c} onClick={() => ed.fillWith(w, h)}>{n}{c ? ` · ${c}` : ''}</Chip>; })}
         </div>
-        <span className="muted small">Uses the selected photo (or the first one on the page).</span>
-      </div>
-      <span className="muted small">{cellCount(page.layout) < 99 ? `${page.images.length} of ${cellCount(page.layout)} photos on this page.` : ''} Changing layout, margins or spacing re-places the photos.</span>
+      </More>
+      {cellCount(page.layout) < 99 && <span className="muted small">{page.images.length} of {cellCount(page.layout)} photos on this page.</span>}
     </div>
   );
 }
@@ -190,94 +227,89 @@ export function TextPanel() {
   const t = ed.selText;
   return (
     <div className="panel-body">
-      <div className="row">
-        <button className="btn primary" onClick={ed.addText}><Plus /> Add text</button>
-        {t && <button className="btn danger-outline" onClick={ed.deleteSel}><Trash /> Delete</button>}
-      </div>
       {t ? (
         <>
-          <label className="field" style={{ marginTop: 0 }}>Text
-            <input value={t.text} onChange={(e) => ed.updateText(t.id, { text: e.target.value })} />
+          <label className="field" style={{ marginTop: 0 }}>Your text
+            <input value={t.text} autoFocus onChange={(e) => ed.updateText(t.id, { text: e.target.value })} />
           </label>
           <SliderRow label="Size" value={t.sizePt} min={6} max={120} suffix={`${t.sizePt} pt`} onChange={(v) => ed.updateText(t.id, { sizePt: v })} />
           <Swatches label="Color" value={t.color} onChange={(c) => ed.updateText(t.id, { color: c })} />
           <Switch label="Bold" checked={t.bold} onChange={(b) => ed.updateText(t.id, { bold: b })} />
+          <div className="row"><button className="btn tonal" onClick={ed.addText}><Plus /> Add another text</button><button className="btn danger-outline" onClick={ed.deleteSel}><Trash /> Delete</button></div>
         </>
-      ) : <p className="muted small">Add text, or tap a text on the page to edit it. Drag the round handle to rotate.</p>}
-      <p className="muted small">Text uses a standard PDF font: Latin letters only, other characters print as "?".</p>
+      ) : (
+        <>
+          <button className="btn primary wide" style={{ marginTop: 0 }} onClick={ed.addText}><Plus /> Add text</button>
+          <p className="muted small" style={{ margin: 0 }}>Tap a text on the page to change it. Drag the round handle to turn it.</p>
+        </>
+      )}
+      <span className="muted small">Letters, numbers and common symbols only. Other characters print as "?".</span>
     </div>
   );
 }
 
-// ---------------------------------------------------------------- Style
-
-export function StylePanel() {
-  const ed = useEd();
-  const { page, proj } = ed;
-  const fb = proj.frameBorder;
-  return (
-    <div className="panel-body">
-      <Swatches label="Page background" value={page.background} onChange={(c) => ed.editPage((pg) => ({ ...pg, background: c }))} />
-      <Switch label="Page border" checked={page.border.on} onChange={(b) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, on: b } }))} />
-      {page.border.on && (
-        <>
-          <SliderRow label="Width" value={page.border.widthMm} min={0.5} max={10} step={0.5} suffix={`${page.border.widthMm} mm`} onChange={(v) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, widthMm: v } }))} />
-          <Swatches label="Border color" value={page.border.color} onChange={(c) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, color: c } }))} />
-        </>
-      )}
-      <Switch label="Borders around photos" hint="A guide for cutting ID photos" checked={fb.on} onChange={(b) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, on: b } }))} />
-      {fb.on && (
-        <>
-          <SliderRow label="Thickness" value={fb.widthMm} min={0.1} max={2} step={0.1} suffix={`${fb.widthMm.toFixed(1)} mm`} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, widthMm: v } }))} />
-          <Swatches label="Photo border color" value={fb.color} onChange={(c) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, color: c } }))} />
-          <div className="field">Border sits
-            <Segmented value={fb.place} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, place: v } }))} options={[['outside', 'Outside'], ['inside', 'Inside']]} />
-            <span className="muted small">{fb.place === 'outside' ? 'Keeps the photo at full size. Cut just inside the line.' : 'Draws over the photo edge. Cut along the outer edge.'}</span>
-          </div>
-        </>
-      )}
-      <Switch label="Crop marks at photo corners" hint={proj.cropMarks && page.spacingMm < 4 ? 'Needs about 4 mm spacing between frames' : undefined} checked={proj.cropMarks} onChange={(b) => ed.edit((p) => ({ ...p, cropMarks: b }))} />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------- Page settings
+// ---------------------------------------------------------------- Page (size, color, guides)
 
 export function PagePanel() {
   const ed = useEd();
-  const { page, unit } = ed;
+  const { page, unit, proj } = ed;
+  const [all, setAll] = useState(true);
   const [wMm, setW] = useState(page.widthMm);
   const [hMm, setH] = useState(page.heightMm);
-  const [all, setAll] = useState(false);
   useEffect(() => { setW(page.widthMm); setH(page.heightMm); }, [page.id, page.widthMm, page.heightMm]);
-  const landscape = wMm > hMm;
-  const preset = presetOf(wMm, hMm);
+  const landscape = page.widthMm > page.heightMm;
+  const preset = presetOf(page.widthMm, page.heightMm);
+  const fb = proj.frameBorder;
   const clampMm = (v: number) => Math.min(MAX_MM, Math.max(MIN_MM, v));
-  const pick = (name: string) => { const [a, b] = PRESETS[name]; setW(landscape ? b : a); setH(landscape ? a : b); };
   const apply = (w: number, h: number) => {
     ed.edit((p) => ({
       ...p, widthMm: w, heightMm: h,
       pages: p.pages.map((pg, k) => (all || k === ed.pi ? ed.relayout({ ...pg, widthMm: w, heightMm: h }) : pg)),
     }));
-    ed.say('Size applied');
   };
+  const pick = (name: string) => { const [a, b] = PRESETS[name]; apply(landscape ? b : a, landscape ? a : b); };
   return (
     <div className="panel-body">
-      <div className="chips">
-        {Object.keys(PRESETS).map((n) => <Chip key={n} on={preset === n} onClick={() => pick(n)}>{n}</Chip>)}
-        <Chip on={!preset} onClick={() => undefined}>Custom</Chip>
+      <div className="field" style={{ marginTop: 0 }}>Paper
+        <div className="chips">
+          {Object.keys(PRESETS).map((n) => <Chip key={n} on={preset === n} onClick={() => pick(n)}>{n}</Chip>)}
+          {!preset && <Chip on onClick={() => undefined}>Custom</Chip>}
+        </div>
       </div>
-      <Segmented value={landscape ? 'l' : 'p'} onChange={(v) => { if ((v === 'l') !== landscape) { setW(hMm); setH(wMm); } }} options={[['p', 'Portrait'], ['l', 'Landscape']]} />
-      <div className="row">
-        <NumField label="Width" mm={wMm} unit={unit} onCommit={(mm) => setW(clampMm(mm))} />
-        <NumField label="Height" mm={hMm} unit={unit} onCommit={(mm) => setH(clampMm(mm))} />
-        <Segmented<Unit> value={unit} onChange={(u) => ed.edit((p) => ({ ...p, unit: u }))} options={[['mm', 'mm'], ['cm', 'cm'], ['in', 'in']]} />
-      </div>
-      <Switch label="Apply size to all pages" checked={all} onChange={setAll} />
-      <button className="btn primary wide" onClick={() => apply(wMm, hMm)}>Apply size</button>
-      <Switch label="Page numbers" hint="Bottom centre of every page" checked={ed.proj.pageNumbers} onChange={(b) => ed.edit((p) => ({ ...p, pageNumbers: b }))} />
-      <button className="btn tonal" onClick={ed.openGrid}><GridIcon /> Show all pages</button>
-      <span className="muted small">{toMm(1, unit) > 0 ? '' : ''}Size: {fmt(page.widthMm, unit)} × {fmt(page.heightMm, unit)} {unit}</span>
+      <Segmented value={landscape ? 'l' : 'p'} onChange={(v) => { if ((v === 'l') !== landscape) apply(page.heightMm, page.widthMm); }} options={[['p', 'Portrait'], ['l', 'Landscape']]} />
+      <Swatches label="Page color" value={page.background} onChange={(c) => ed.editPage((pg) => ({ ...pg, background: c }))} />
+      <Switch label="Page numbers" checked={proj.pageNumbers} onChange={(b) => ed.edit((p) => ({ ...p, pageNumbers: b }))} />
+      <Switch label="Cutting lines around photos" hint="Thin line to cut along" checked={fb.on} onChange={(b) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, on: b } }))} />
+      <More>
+        <div className="field">Custom paper size
+          <div className="row">
+            <NumField label="Width" mm={wMm} unit={unit} onCommit={(mm) => setW(clampMm(mm))} />
+            <NumField label="Height" mm={hMm} unit={unit} onCommit={(mm) => setH(clampMm(mm))} />
+            <Segmented<Unit> value={unit} onChange={(u) => ed.edit((p) => ({ ...p, unit: u }))} options={[['mm', 'mm'], ['cm', 'cm'], ['in', 'in']]} />
+          </div>
+          <button className="btn tonal" onClick={() => apply(wMm, hMm)}>Use this size</button>
+        </div>
+        <Switch label="Same size for all pages" checked={all} onChange={setAll} />
+        <Switch label="Border around the page" checked={page.border.on} onChange={(b) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, on: b } }))} />
+        {page.border.on && (
+          <>
+            <SliderRow label="Width" value={page.border.widthMm} min={0.5} max={10} step={0.5} suffix={`${page.border.widthMm} mm`} onChange={(v) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, widthMm: v } }))} />
+            <Swatches label="Border color" value={page.border.color} onChange={(c) => ed.editPage((pg) => ({ ...pg, border: { ...pg.border, color: c } }))} />
+          </>
+        )}
+        {fb.on && (
+          <>
+            <SliderRow label="Line" value={fb.widthMm} min={0.1} max={2} step={0.1} suffix={`${fb.widthMm.toFixed(1)} mm`} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, widthMm: v } }))} />
+            <Swatches label="Cutting line color" value={fb.color} onChange={(c) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, color: c } }))} />
+            <div className="field">Cutting line sits
+              <Segmented value={fb.place} onChange={(v) => ed.edit((p) => ({ ...p, frameBorder: { ...p.frameBorder, place: v } }))} options={[['outside', 'Outside the photo'], ['inside', 'Inside']]} />
+              <span className="muted small">{fb.place === 'outside' ? 'Keeps the photo full size. Cut just inside the line.' : 'Draws over the photo edge. Cut along the outer edge.'}</span>
+            </div>
+          </>
+        )}
+        <Switch label="Corner marks" hint={proj.cropMarks && page.spacingMm < 4 ? 'Needs about 4 mm gap between photos' : 'Small marks at each photo corner'} checked={proj.cropMarks} onChange={(b) => ed.edit((p) => ({ ...p, cropMarks: b }))} />
+        <button className="btn tonal" onClick={ed.openGrid}>Show all pages</button>
+      </More>
     </div>
   );
 }
@@ -293,15 +325,17 @@ export function ItemPanel() {
     return (
       <div className="panel-body">
         <div className="tools">
-          <button className="btn" onClick={() => ed.rotateImage(im, -1)}><RotR /> Rotate</button>
-          <button className="btn" onClick={() => ed.resetCrop(im)}>Reset crop</button>
-          {ed.page.layout !== 'free' && <button className="btn tonal" onClick={() => ed.fillCell(im)}>Fill cell</button>}
-          {ed.page.layout !== 'free' && <button className="btn tonal" onClick={() => ed.fitCell(im)}>Fit cell</button>}
+          <button className="btn" onClick={() => ed.rotateImage(im, 1)}><RotR /> Turn</button>
+          {ed.page.layout !== 'free' && <button className="btn tonal" onClick={() => ed.fillCell(im)}>Fill the space</button>}
+          {ed.page.layout !== 'free' && <button className="btn tonal" onClick={() => ed.fitCell(im)}>Fit in space</button>}
         </div>
-        {(['l', 'r', 't', 'b'] as const).map((s) => (
-          <SliderRow key={s} label={{ l: 'Left', r: 'Right', t: 'Top', b: 'Bottom' }[s]} value={sides[s]} min={0} max={0.45} step={0.01} suffix={`${Math.round(sides[s] * 100)}%`} onChange={(v) => ed.setCropSide(im, s, v)} />
-        ))}
-        <span className="muted small">Crop trims the photo. Use the round handle on the page to rotate freely.</span>
+        <div className="field">Trim the edges
+          {(['l', 'r', 't', 'b'] as const).map((s) => (
+            <SliderRow key={s} label={{ l: 'Left', r: 'Right', t: 'Top', b: 'Bottom' }[s]} value={sides[s]} min={0} max={0.45} step={0.01} suffix={`${Math.round(sides[s] * 100)}%`} onChange={(v) => ed.setCropSide(im, s, v)} />
+          ))}
+          <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => ed.resetCrop(im)}>Undo trimming</button>
+        </div>
+        <span className="muted small">To tilt the photo, drag the round handle above it.</span>
       </div>
     );
   }
@@ -313,17 +347,24 @@ export function ItemPanel() {
             <SliderRow label="Zoom" value={fr.zoom} min={1} max={4} step={0.02} suffix={`${Math.round(fr.zoom * 100)}%`} onChange={(v) => ed.updateFrame(fr.id, { zoom: v })} />
             <div className="tools">
               <button className={'btn' + (ed.adjust ? ' on' : '')} onClick={() => ed.setAdjust(!ed.adjust)}>{ed.adjust ? 'Done' : 'Move photo'}</button>
-              <button className="btn" onClick={() => ed.rotateFrame(fr, -1)}><RotR /> Rotate</button>
               <button className="btn tonal" onClick={() => ed.centerFace(fr.id)}><Face /> Center face</button>
-              <button className="btn tonal" onClick={() => ed.copyToAll(fr)}>Copy to all frames</button>
+            </div>
+            {ed.adjust && <span className="muted small">Drag the photo inside the frame.</span>}
+          </>
+        ) : <p className="muted small" style={{ margin: 0 }}>This frame is empty. Open Add and tap a photo to put it here.</p>}
+        <More>
+          {fr.file && (
+            <div className="tools">
+              <button className="btn" onClick={() => ed.rotateFrame(fr, 1)}><RotR /> Turn photo</button>
+              <button className="btn" onClick={() => ed.copyToAll(fr)}>Use in all frames</button>
               <button className="btn" onClick={() => ed.updateFrame(fr.id, { file: '', zoom: 1, cx: 0.5, cy: 0.5, rot: 0 })}>Remove photo</button>
             </div>
-          </>
-        ) : <p className="muted small" style={{ margin: 0 }}>This frame is empty. Open Add, then tap a photo to put it here.</p>}
-        <div className="row" style={{ alignItems: 'center' }}>
-          <span className="muted small">{fmt(fr.w * ed.page.widthMm, unit)} × {fmt(fr.h * ed.page.heightMm, unit)} {unit}</span>
-          <button className="btn" onClick={() => ed.resizeFrame(fr, fsize.w, fsize.h)}>Set to {fmt(fsize.w, unit)}×{fmt(fsize.h, unit)} {unit}</button>
-        </div>
+          )}
+          <div className="row" style={{ alignItems: 'center' }}>
+            <span className="muted small">This frame: {fmt(fr.w * ed.page.widthMm, unit)} × {fmt(fr.h * ed.page.heightMm, unit)} {unit}</span>
+            <button className="btn" onClick={() => ed.resizeFrame(fr, fsize.w, fsize.h)}>Change to {fmt(fsize.w, unit)}×{fmt(fsize.h, unit)} {unit}</button>
+          </div>
+        </More>
       </div>
     );
   }
