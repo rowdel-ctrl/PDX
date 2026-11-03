@@ -8,7 +8,7 @@ import { askConfirm } from '../notify';
 import SizeSheet from '../SizeSheet';
 import { newPage } from '../storage';
 import { projectFromTemplate, TEMPLATES } from '../templates';
-import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Plus, Size, More, Tune } from '../icons';
+import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Plus, Size, More, Tune, Close } from '../icons';
 
 export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, tab?: 'images' | 'frames' | 'layout') => void; onPoster: () => void }) {
   const [list, setList] = useState(listProjects);
@@ -16,6 +16,7 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
   const [menu, setMenu] = useState<string | null>(null);
   const [askSize, setAskSize] = useState<StartKind | null>(null);
   const [printer, setPrinter] = useState(false);
+  const [prints, setPrints] = useState(false);
   const refresh = () => setList(listProjects());
   const thumbs = useMemo(() => TEMPLATES.map((t) => ({ t, page: t.make(newPage(t.w, t.h)) })), []);
 
@@ -31,7 +32,7 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
     onOpen(project.id, tab);
   };
   // Documents, collages and blank pages ask for a size first. ID photos and photo prints have fixed sizes.
-  const start = (kind: StartKind) => (kind === 'document' || kind === 'blank' || kind === 'collage' ? setAskSize(kind) : create(kind));
+  const start = (kind: StartKind) => (kind === 'prints' ? setPrints(true) : kind === 'document' || kind === 'blank' || kind === 'collage' ? setAskSize(kind) : create(kind));
   const fromTemplate = (i: number) => {
     const p = projectFromTemplate(TEMPLATES[i]);
     saveProject(p);
@@ -109,6 +110,23 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
           })}
         </div>
       </main>
+      {prints && (
+        <div className="sheet-back" onClick={() => setPrints(false)}>
+          <div className="sheet" role="dialog" aria-label="Photo prints" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-grab" />
+            <div className="sheet-head"><b>Photo prints</b><button className="icon-btn" onClick={() => setPrints(false)} aria-label="Close"><Close /></button></div>
+            <p className="muted small" style={{ margin: '0 0 8px' }}>Pick a print size. One photo per page, or several on a sheet.</p>
+            <div className="print-grid">
+              {thumbs.map(({ t, page }, i) => (t.group === 'Photo prints' ? (
+                <button key={t.id} className="tcard" onClick={() => { setPrints(false); fromTemplate(i); }}>
+                  <span className="tcard-thumb"><PageThumb page={page} maxW={78} maxH={92} /></span>
+                  <span className="tcard-name">{t.name}</span>
+                </button>
+              ) : null))}
+            </div>
+          </div>
+        </div>
+      )}
       {printer && <SettingsSheet onClose={() => setPrinter(false)} />}
       {askSize && <SizeSheet title={askSize === 'collage' ? 'New collage' : askSize === 'blank' ? 'New page' : 'New document'} onClose={() => setAskSize(null)} onCreate={(size) => { const k = askSize; setAskSize(null); create(k, size); }} />}
     </div>
