@@ -1,6 +1,7 @@
 import type { Page, Project } from './types';
 import { newId } from './images';
-import { applyLayout } from './layout';
+import { applyLayout, fillFrames } from './layout';
+import type { LayoutId } from './types';
 
 const KEY = 'pdx.projects.v1';
 
@@ -46,3 +47,22 @@ export function newProject(name: string, widthMm = 210, heightMm = 297): Project
 }
 
 export { applyLayout };
+
+export type StartKind = 'id' | 'prints' | 'collage' | 'document' | 'blank';
+
+/** New project already set up for a common job (page size, layout, frames). */
+export function startProject(kind: StartKind): { project: Project; tab: 'images' | 'frames' | 'layout' } {
+  const cfg: Record<StartKind, { name: string; w: number; h: number; layout: LayoutId; margin: number; spacing: number }> = {
+    id: { name: 'ID photos', w: 210, h: 297, layout: '1', margin: 10, spacing: 5 },
+    prints: { name: 'Photo prints', w: 101.6, h: 152.4, layout: '1', margin: 3, spacing: 3 },
+    collage: { name: 'Collage', w: 210, h: 297, layout: '2x2', margin: 10, spacing: 5 },
+    document: { name: 'Document', w: 210, h: 297, layout: '1', margin: 10, spacing: 5 },
+    blank: { name: 'Untitled', w: 210, h: 297, layout: '1', margin: 10, spacing: 5 },
+  };
+  const c = cfg[kind];
+  const project = newProject(c.name, c.w, c.h);
+  let pg = { ...project.pages[0], layout: c.layout, marginMm: c.margin, spacingMm: c.spacing };
+  if (kind === 'id') pg = { ...pg, frames: fillFrames(pg, 35, 45) };
+  project.pages = [pg];
+  return { project, tab: kind === 'id' ? 'frames' : kind === 'collage' ? 'layout' : 'images' };
+}

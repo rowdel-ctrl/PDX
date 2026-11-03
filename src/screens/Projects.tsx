@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { listProjects, newProject, removeProject, saveProject } from '../storage';
+import { listProjects, removeProject, saveProject, startProject, type StartKind } from '../storage';
 import { deleteImages } from '../images';
 import { fmt, presetOf } from '../units';
 import PageThumb from '../PageThumb';
-import { Moon, Plus, Sun, Trash, Edit } from '../icons';
+import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Grid, Pages as PagesIcon, Plus, Size } from '../icons';
 
-export default function Projects({ onOpen, onPoster }: { onOpen: (id: string) => void; onPoster: () => void }) {
+export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, tab?: 'images' | 'frames' | 'layout') => void; onPoster: () => void }) {
   const [list, setList] = useState(listProjects);
   const [dark, setDark] = useState(document.documentElement.dataset.theme === 'dark');
   const [menu, setMenu] = useState<string | null>(null);
@@ -17,10 +17,10 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string) =>
     document.documentElement.dataset.theme = next ? 'dark' : 'light';
     try { localStorage.setItem('pdx.theme', next ? 'dark' : 'light'); } catch { /* ignore */ }
   };
-  const create = () => {
-    const p = newProject(`Project ${list.length + 1}`);
-    saveProject(p);
-    onOpen(p.id);
+  const create = (kind: StartKind) => {
+    const { project, tab } = startProject(kind);
+    saveProject(project);
+    onOpen(project.id, tab);
   };
   const rename = (id: string) => {
     const p = list.find((x) => x.id === id)!;
@@ -42,9 +42,19 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string) =>
         <button className="icon-btn" onClick={toggle} aria-label="Toggle dark mode">{dark ? <Sun /> : <Moon />}</button>
       </header>
       <main className="scroll pad">
-        <h1>Projects</h1>
-        <p className="muted">Saved on this phone</p>
-        {list.length === 0 && <p className="empty muted">No projects yet. Tap "New project" to start.</p>}
+        <h1>What will you make?</h1>
+        <div className="starts">
+          {([
+            ['id', 'ID photos', FrameIcon, '#E7EAFF'], ['prints', 'Photo prints', ImageIcon, '#FFE5D6'], ['collage', 'Collage', Grid, '#DDF3E4'],
+            ['document', 'Document', PagesIcon, '#F1E3FA'],
+          ] as [StartKind, string, () => React.ReactElement, string][]).map(([k, label, Ic, bg]) => (
+            <button key={k} className="start" onClick={() => create(k)}><span className="start-ic" style={{ background: bg }}><Ic /></span>{label}</button>
+          ))}
+          <button className="start" onClick={onPoster}><span className="start-ic" style={{ background: '#FFF3C4' }}><Size /></span>Tarpapel poster</button>
+          <button className="start" onClick={() => create('blank')}><span className="start-ic" style={{ background: 'var(--accent-soft)' }}><Plus /></span>Blank</button>
+        </div>
+        <h2 className="sec">Recent</h2>
+        {list.length === 0 && <p className="empty muted">Your projects will show up here. Saved on this phone.</p>}
         <div className="cards">
           {list.map((p) => {
             const pg = p.pages[0];
@@ -68,8 +78,6 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string) =>
           })}
         </div>
       </main>
-      <footer className="footbar"><button className="btn" onClick={onPoster}>Tarpapel poster</button>
-        <button className="btn primary" onClick={create}><Plus /> New project</button></footer>
     </div>
   );
 }

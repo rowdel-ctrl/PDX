@@ -3,11 +3,12 @@ import type { Project, Quality } from '../types';
 import { buildPdf } from '../pdf';
 import { savePdf, sharePdf } from '../files';
 import { fmt, presetOf } from '../units';
-import { Back, Download, Share } from '../icons';
+import { Download, Share } from '../icons';
 
 const Q: [Quality, string][] = [['small', 'Small'], ['standard', 'Standard'], ['high', 'High']];
 
-export default function Export({ project, onBack }: { project: Project; onBack: () => void }) {
+/** Bottom sheet over the editor: name, quality, save or share the PDF. */
+export default function ExportSheet({ project, onClose }: { project: Project; onClose: () => void }) {
   const [name, setName] = useState(project.name);
   const [quality, setQuality] = useState<Quality>('standard');
   const [busy, setBusy] = useState('');
@@ -15,7 +16,6 @@ export default function Export({ project, onBack }: { project: Project; onBack: 
   const pg = project.pages[0];
   const sizes = new Set(project.pages.map((p) => `${p.widthMm}x${p.heightMm}`));
   const sizeLabel = sizes.size > 1 ? 'Mixed sizes' : presetOf(pg.widthMm, pg.heightMm) ?? `${fmt(pg.widthMm, project.unit)}×${fmt(pg.heightMm, project.unit)} ${project.unit}`;
-  const orient = sizes.size > 1 ? 'Mixed' : pg.widthMm > pg.heightMm ? 'Landscape' : 'Portrait';
 
   const run = async (kind: 'save' | 'share') => {
     setMsg('');
@@ -32,14 +32,11 @@ export default function Export({ project, onBack }: { project: Project; onBack: 
   };
 
   return (
-    <div className="screen">
-      <header className="topbar"><button className="icon-btn" onClick={onBack} aria-label="Back"><Back /></button><h2 className="grow">Export</h2></header>
-      <main className="scroll pad">
-        <div className="summary">
-          <div><b>{project.pages.length}</b><span className="muted small">{project.pages.length === 1 ? 'page' : 'pages'}</span></div>
-          <div><b>{sizeLabel}</b><span className="muted small">size</span></div>
-          <div><b>{orient}</b><span className="muted small">orientation</span></div>
-        </div>
+    <div className="sheet-back" onClick={onClose}>
+      <div className="sheet" role="dialog" aria-label="Share" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-grab" />
+        <div className="sheet-head"><b>Share as PDF</b><button className="icon-btn" onClick={onClose} aria-label="Close">✕</button></div>
+        <p className="muted small" style={{ margin: '0 0 4px' }}>{project.pages.length} {project.pages.length === 1 ? 'page' : 'pages'} · {sizeLabel}</p>
         <label className="field">File name
           <div className="suffix"><input value={name} onChange={(e) => setName(e.target.value)} /><span>.pdf</span></div>
         </label>
@@ -50,7 +47,7 @@ export default function Export({ project, onBack }: { project: Project; onBack: 
         <button className="btn wide" disabled={!!busy} onClick={() => run('share')}><Share /> Share (WhatsApp, Email, other apps)</button>
         {busy && <p className="muted" role="status">{busy}</p>}
         {msg && <p role="status">{msg}</p>}
-      </main>
+      </div>
     </div>
   );
 }

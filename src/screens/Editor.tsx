@@ -8,9 +8,10 @@ import PageCanvas from '../PageCanvas';
 import PageThumb, { PhotoThumb } from '../PageThumb';
 import NumField from '../NumField';
 import { faceFit, findFace } from '../face';
-import Export from './Export';
+import ExportSheet from './Export';
+import PageStrip from '../PageStrip';
 import { useBack } from '../back';
-import { Back, Copy, Grid, Image as ImageIcon, Left, Palette, Pages as PagesIcon, Plus, Right, Size, Trash, Type, Undo, Redo, RotL, RotR, FrameIcon } from '../icons';
+import { Back, Copy, Grid, Image as ImageIcon, Left, Palette, Pages as PagesIcon, Plus, Right, Size, Trash, Type, Undo, Redo, RotL, RotR, FrameIcon, Share } from '../icons';
 
 type Tab = 'images' | 'layout' | 'size' | 'style' | 'text' | 'frames' | 'pages';
 const TABS: [Tab, string, () => React.ReactElement][] = [
@@ -31,7 +32,7 @@ const filesOf = (p: Project) => new Set([
   ...p.tray.map((t) => t.file),
 ]);
 
-export default function Editor({ id, onBack }: { id: string; onBack: () => void }) {
+export default function Editor({ id, onBack, initialTab = 'images' }: { id: string; onBack: () => void; initialTab?: Tab }) {
   const [proj, setProj] = useState<Project | null>(() => listProjects().find((p) => p.id === id) ?? null);
   const projRef = useRef(proj);
   const past = useRef<Project[]>([]);
@@ -40,7 +41,7 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
   const seen = useRef<Set<string>>(new Set(proj ? filesOf(proj) : []));
   const [hist, setHist] = useState({ u: 0, r: 0 });
   const [pi, setPi] = useState(0);
-  const [tab, setTab] = useState<Tab>('images');
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [sel, setSel] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [toast, setToast] = useState('');
@@ -331,8 +332,6 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
     if (n) edit((p) => ({ ...p, name: n }));
   };
 
-  if (exporting) return <Export project={proj} onBack={() => setExporting(false)} />;
-
   const sz = presetOf(page.widthMm, page.heightMm) ?? `${fmt(page.widthMm, unit)}×${fmt(page.heightMm, unit)} ${unit}`;
   const cropSides = selImage ? { l: selImage.crop.x, t: selImage.crop.y, r: 1 - selImage.crop.x - selImage.crop.w, b: 1 - selImage.crop.y - selImage.crop.h } : null;
   const gridLayout = page.layout !== 'free';
@@ -347,18 +346,14 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
         </button>
         <button className="icon-btn" disabled={!hist.u} onClick={undo} aria-label="Undo"><Undo /></button>
         <button className="icon-btn" disabled={!hist.r} onClick={redo} aria-label="Redo"><Redo /></button>
-        <button className="btn primary" onClick={() => setExporting(true)}>Export</button>
+        <button className="btn primary" onClick={() => setExporting(true)}><Share /> Share</button>
       </header>
 
       <PageCanvas page={page} pageNo={pi + 1} pageNumbers={proj.pageNumbers} unit={unit} selectedId={sel} onSelect={onCanvasSelect}
         onChange={updateImage} onChangeText={updateText} onSwap={swap} onChangeFrame={updateFrame}
         adjust={adjust && !!selFrame?.file} dropTarget={over} border={proj.frameBorder} cropMarks={proj.cropMarks} hitRef={hit} />
 
-      <div className="pager">
-        <button className="icon-btn" disabled={pi === 0} onClick={() => goPage(pi - 1)} aria-label="Previous page"><Left /></button>
-        <span>Page {pi + 1} of {proj.pages.length}</span>
-        <button className="icon-btn" disabled={pi >= proj.pages.length - 1} onClick={() => goPage(pi + 1)} aria-label="Next page"><Right /></button>
-      </div>
+      <PageStrip project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} />
 
       <section className="panel">
         {tab === 'images' && (
@@ -498,6 +493,7 @@ export default function Editor({ id, onBack }: { id: string; onBack: () => void 
         ))}
       </nav>
       {toast && <div className="toast" role="status">{toast}</div>}
+      {exporting && <ExportSheet project={proj} onClose={() => setExporting(false)} />}
     </div>
   );
 }
