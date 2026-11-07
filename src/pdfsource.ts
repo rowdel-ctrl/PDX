@@ -35,7 +35,7 @@ export async function loadPhoto(file: Blob): Promise<Source> {
 }
 
 // pdf.js is large, so it is only loaded when someone opens a PDF.
-async function pdfjs() {
+export async function pdfjs() {
   const lib = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const worker = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
   lib.GlobalWorkerOptions.workerSrc = worker;

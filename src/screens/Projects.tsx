@@ -10,7 +10,7 @@ import { newPage } from '../storage';
 import { projectFromTemplate, TEMPLATES } from '../templates';
 import { Moon, Sun, Trash, Edit, FrameIcon, Image as ImageIcon, Plus, Size, More, Tune, Close, Checklist, Copy } from '../icons';
 
-export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, tab?: 'images' | 'frames' | 'layout') => void; onPoster: () => void }) {
+export default function Projects({ onOpen, onPoster, onTool }: { onOpen: (id: string, tab?: 'images' | 'frames' | 'layout') => void; onPoster: () => void; onTool: (t: 'scan' | 'fill') => void }) {
   const [list, setList] = useState(listProjects);
   const [dark, setDark] = useState(document.documentElement.dataset.theme === 'dark');
   const [menu, setMenu] = useState<string | null>(null);
@@ -71,8 +71,9 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
     removeProject(id); refresh(); setMenu(null);
   };
 
-  const starts: [StartKind | 'poster', string, () => React.ReactElement, string][] = [
+  const starts: [StartKind | 'poster' | 'scan' | 'fill', string, () => React.ReactElement, string][] = [
     ['id', 'ID photos', FrameIcon, 'c1'], ['prints', 'Photo prints', ImageIcon, 'c2'],
+    ['scan', 'Scan', ImageIcon, 'c4'], ['fill', 'Fill a form', Edit, 'c3'],
     ['poster', 'Tarpapel poster', Size, 'c5'], ['blank', 'Blank', Plus, 'c6'],
   ];
 
@@ -89,7 +90,7 @@ export default function Projects({ onOpen, onPoster }: { onOpen: (id: string, ta
         <h1>What will you make?</h1>
         <div className="starts">
           {starts.map(([k, label, Ic, cls]) => (
-            <button key={k} className={'start ' + cls} onClick={() => (k === 'poster' ? onPoster() : start(k))}><Ic />{label}</button>
+            <button key={k} className={'start ' + cls} onClick={() => (k === 'poster' ? onPoster() : k === 'scan' || k === 'fill' ? onTool(k) : start(k))}><Ic />{label}</button>
           ))}
         </div>
 
