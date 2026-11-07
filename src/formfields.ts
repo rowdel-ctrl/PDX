@@ -13,8 +13,8 @@ export function findFields(src: HTMLCanvasElement): Field[] {
   const c = canvasOf(W, H); const ctx = c.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(src, 0, 0, W, H);
   const d = ctx.getImageData(0, 0, W, H).data;
-  const dark = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) dark[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114 < 150 ? 1 : 0;
+  const dark = new Uint8Array(W * H); const gray = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) { const g = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114; gray[i] = g; dark[i] = g < 150 ? 1 : 0; }
   const out: Field[] = [];
 
   // underlines: runs of dark pixels, stacked into thin lines
@@ -34,10 +34,44 @@ export function findFields(src: HTMLCanvasElement): Field[] {
     const l = lines.find((q) => r.y - q.y1 <= 1 && Math.abs(r.x0 - q.x0) < 6 && Math.abs(r.x1 - q.x1) < 6);
     if (l) { l.y1 = r.y; } else lines.push({ y0: r.y, y1: r.y, x0: r.x0, x1: r.x1 });
   }
+  // A line only counts when the space right above it is empty, white and big enough to write in.
+  // That leaves out table edges with a label or text on them, lines under filled-in text and shaded areas.
+  const maxH = Math.max(16, Math.min(34, W * 0.03)), minH = Math.max(13, W * 0.016);
+  const free = (x0: number, x1: number, y: number) => {
+    let h = 0;
+    for (let yy = y - 1; yy >= 0 && h < maxH; yy--) {
+      let on = 0, sum = 0, n = 0;
+      for (let x = x0 + 2; x < x1 - 2; x++) { on += dark[yy * W + x]; sum += gray[yy * W + x]; n++; }
+      if (n < 6 || on / n > 0.02 || sum / n < 226) break;
+      h++;
+    }
+    return h;
+  };
+  const kept: { x0: number; x1: number; y0: number; y1: number }[] = [];
+  const vline = (x: number, ya: number, yb: number) => { // is there a vertical stroke near x between ya and yb
+    const lo = Math.max(0, Math.min(ya, yb)), hi = Math.min(H - 1, Math.max(ya, yb)); if (hi - lo < 6) return false;
+    for (let dx = -3; dx <= 3; dx++) { const xx = Math.min(W - 1, Math.max(0, x + dx)); let on = 0; for (let y = lo; y <= hi; y++) on += dark[y * W + xx]; if (on / (hi - lo + 1) > 0.85) return true; }
+    return false;
+  };
   for (const l of lines) {
     if (l.y1 - l.y0 > 4) continue; // thick bars are not underlines
-    const h = Math.max(14, Math.min(34, W * 0.028));
-    out.push({ id: fid(), kind: 'line', x: l.x0 / W, y: Math.max(0, l.y0 - h) / H, w: (l.x1 - l.x0) / W, h: h / H, label: '' });
+    const fh = free(l.x0, l.x1, l.y0);
+    if (fh < minH) continue;
+    const y0 = l.y0 - fh, y1 = l.y0;
+    // the top edge of a table (strokes go down from it, none go up) is not somewhere to write
+    const below = vline(l.x0, l.y1 + 2, l.y1 + 14) || vline(l.x1, l.y1 + 2, l.y1 + 14), above = vline(l.x0, y0, y1 - 1) || vline(l.x1, y0, y1 - 1);
+    if (below && !above) continue;
+    // cut the box where cell walls cross it
+    const cuts: number[] = [l.x0];
+    for (let x = l.x0 + 6; x < l.x1 - 6; x++) if (vline(x, y0 + 1, y1 - 1)) { cuts.push(x); x += 6; }
+    cuts.push(l.x1);
+    for (let i = 0; i + 1 < cuts.length; i++) {
+      const sx0 = cuts[i] + (i ? 4 : 0), sx1 = cuts[i + 1] - (i + 2 < cuts.length ? 4 : 0);
+      if (sx1 - sx0 < minRun * 0.6) continue;
+      if (kept.some((k) => Math.min(k.x1, sx1) - Math.max(k.x0, sx0) > 0.5 * Math.min(k.x1 - k.x0, sx1 - sx0) && Math.min(k.y1, y1) - Math.max(k.y0, y0) > 0.3 * fh)) continue;
+      kept.push({ x0: sx0, x1: sx1, y0, y1 });
+      out.push({ id: fid(), kind: 'line', x: sx0 / W, y: y0 / H, w: (sx1 - sx0) / W, h: fh / H, label: '' });
+    }
   }
   // a frame (table cell border) has two long lines close together: keep both, they are harmless
 
