@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { applyFilter, canvasOf, decode, defaultQuad, detectCorners, flatten, rotate, toBlob, type Filter, type Pt } from '../scanlib';
+import { applyFilter, canvasOf, decode, defaultQuad, flatten, rotate, toBlob, type Filter, type Pt } from '../scanlib';
+import { findPages } from '../cvpage';
 import { recognize, type OcrPage } from '../ocr';
 import { scansToPdf } from '../scanout';
 import { savePdf, sharePdf, saveFiles } from '../files';
@@ -11,7 +12,7 @@ import { useBack } from '../back';
 import { SliderRow, Switch } from '../ui';
 import { Back, Close, Copy, Crop, Download, Image as ImageIcon, Left, Plus, Right, RotR, Share, Trash, Type, Wand } from '../icons';
 
-interface SP { id: string; src: Blob; quad: Pt[]; rot: number; filter: Filter; bright: number; thumb: string; ocr?: OcrPage }
+interface SP { id: string; src: Blob; quad: Pt[]; cands: Pt[][]; ci: number; rot: number; filter: Filter; bright: number; thumb: string; ocr?: OcrPage }
 
 const FILTERS: [Filter, string, string][] = [['orig', 'Original', '#E8E4DA'], ['magic', 'Magic', '#FFFFFF'], ['bw', 'Black & white', '#FFFFFF'], ['gray', 'Gray', '#C9C9CF']];
 
@@ -88,8 +89,8 @@ export default function Scan({ onBack, onOpen }: { onBack: () => void; onOpen: (
     try {
       const added: SP[] = [];
       for (const f of Array.from(files)) {
-        const c = await decode(f, 2200); const quad = detectCorners(c) ?? defaultQuad();
-        const sp: SP = { id: newId(), src: await toBlob(c, 0.9), quad, rot: 0, filter: 'magic', bright: 0, thumb: thumbOf(c) };
+        const c = await decode(f, 2200); const cands = await findPages(c); const quad = cands[0] ?? defaultQuad();
+        const sp: SP = { id: newId(), src: await toBlob(c, 0.9), quad, cands, ci: 0, rot: 0, filter: 'magic', bright: 0, thumb: thumbOf(c) };
         srcCache.current = { id: sp.id, c }; added.push(sp);
       }
       setCur(pages.length); setPages((l) => [...l, ...added]);
@@ -102,7 +103,15 @@ export default function Scan({ onBack, onOpen }: { onBack: () => void; onOpen: (
     if (v === 'cam') camRef.current?.click(); else if (v === 'gal') galRef.current?.click();
   };
 
-  const auto = async () => { if (!p) return; const c = await sourceOf(p); const q = detectCorners(c); if (q) { upd(p.id, { quad: q }); flash('Page found'); } else { upd(p.id, { quad: defaultQuad() }); flash('No clear page edge. Drag the corners.', 'warn'); } };
+  const other = async () => {
+    if (!p) return;
+    let cands = p.cands;
+    if (!cands.length) { flash('Looking again…', 'busy'); cands = await findPages(await sourceOf(p)); setMsg(null); }
+    if (!cands.length) { flash('No clear page edge. Drag the corners.', 'warn'); return; }
+    const ci = p.cands.length ? (p.ci + 1) % cands.length : 0;
+    upd(p.id, { cands, ci, quad: cands[ci] });
+    flash(cands.length > 1 ? `Shape ${ci + 1} of ${cands.length}` : 'Page found');
+  };
 
   const del = async () => {
     if (!p) return;
@@ -206,7 +215,7 @@ export default function Scan({ onBack, onOpen }: { onBack: () => void; onOpen: (
         <div className="scan-panel">
           <p className="muted small" style={{ margin: 0 }}>Drag the four corners onto the corners of the page.</p>
           <div className="row">
-            <button className="btn tonal" onClick={auto}><Wand /> Find page again</button>
+            <button className="btn tonal" onClick={other}><Wand /> {p.cands.length > 1 ? 'Try another shape' : 'Find page again'}</button>
             <button className="btn" onClick={() => upd(p.id, { quad: defaultQuad() })}>Reset</button>
           </div>
         </div>

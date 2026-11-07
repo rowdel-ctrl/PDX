@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PDFDocument, rgb } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
+import { findPages } from '../cvpage';
 import { pdfjs } from '../pdfsource';
-import { applyFilter, canvasOf, canvasToBytes, decode, detectCorners, flatten } from '../scanlib';
+import { applyFilter, canvasOf, canvasToBytes, decode, flatten } from '../scanlib';
 import { findFields, nameDefaults, nameFields, pdfFields, tidy, type Field } from '../formfields';
 import { FORM_FONTS, fontOf, loadFormFonts } from '../formfonts';
 import { savePdf, sharePdf } from '../files';
@@ -72,7 +73,7 @@ export default function Fill({ onBack }: { onBack: () => void }) {
     try {
       const out: FPage[] = [];
       for (const f of Array.from(files)) {
-        let c = await decode(f, 2200); const q = detectCorners(c);
+        let c = await decode(f, 2200); const q = (await findPages(c))[0];
         if (q) c = flatten(c, q, 2200);
         c = applyFilter(c, 'magic', 0);
         const fl = nameDefaults(tidy(findFields(c)));
