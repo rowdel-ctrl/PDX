@@ -110,6 +110,13 @@ export default function Fill({ onBack }: { onBack: () => void }) {
     const it: Item = { id: newId(), page: curPage, kind: 'text', text, x: 0.15, y: 0.15, size: 0.022, font: def.font, color: def.color };
     setItems((l) => [...l, it]); setSel(it.id); setAct(null); setTimeout(() => inputRef.current?.focus(), 30);
   };
+  const addAt = (e: React.MouseEvent, pi: number) => {
+    if (sel || act) { setSel(null); setAct(null); setFontOpen(false); return; } // first tap just lets go
+    const r = e.currentTarget.getBoundingClientRect(); const p = pages[pi];
+    const size = 0.022, hFrac = size * (p.wPt / p.hPt);
+    const it: Item = { id: newId(), page: pi, kind: 'text', text: '', x: Math.min(0.9, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(0.97, Math.max(0, (e.clientY - r.top) / r.height - hFrac / 2)), size, font: def.font, color: def.color };
+    setCurPage(pi); setItems((l) => [...l, it]); setSel(it.id); setTimeout(() => inputRef.current?.focus(), 30);
+  };
   const addTick = () => { if (!pages[curPage]) return; const it: Item = { id: newId(), page: curPage, kind: 'tick', text: '', x: 0.2, y: 0.2, size: 0.03, font: def.font, color: def.color }; setItems((l) => [...l, it]); setSel(it.id); setAct(null); };
   const addDate = () => {
     const d = new Date(); const t = `${String(d.getMonth() + 1).padStart(2, '0')} / ${String(d.getDate()).padStart(2, '0')} / ${d.getFullYear()}`;
@@ -203,11 +210,12 @@ export default function Fill({ onBack }: { onBack: () => void }) {
             <button className="btn tonal" onClick={addTick}>✓ Tick</button>
             <button className="btn tonal" onClick={addDate}>Date</button>
             <span className="grow" />
-            {total > 0 && <button className="btn" onClick={() => setShowBoxes((s) => !s)}>{total} fields · {showBoxes ? 'Hide' : 'Show'}</button>}
+            <button className={'btn' + (showBoxes ? ' on' : '')} aria-pressed={showBoxes} onClick={() => setShowBoxes((s) => !s)}>Auto-detect {showBoxes ? 'on' : 'off'}{total > 0 ? ` · ${total}` : ''}</button>
           </div>
-          <main className="scroll fill-pages" onPointerDown={() => { setSel(null); setAct(null); setFontOpen(false); }}>
+          <p className="muted small fill-hint">{showBoxes && total === 0 ? 'No places to fill were found. ' : ''}Tap anywhere on the page to type.</p>
+          <main className="scroll fill-pages" onPointerDown={(e) => { if (e.target === e.currentTarget) { setSel(null); setAct(null); setFontOpen(false); } }}>
             {pages.map((p, pi) => (
-              <div key={p.id} className="fill-page" style={{ aspectRatio: String(p.aspect) }}>
+              <div key={p.id} className="fill-page" style={{ aspectRatio: String(p.aspect) }} onClick={(e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === 'IMG') addAt(e, pi); }}>
                 <img src={p.img} alt={`Page ${pi + 1}`} draggable={false} />
                 {showBoxes && p.fields.filter((f) => !hidden.includes(f.id)).map((f) => (
                   <button key={f.id} id={'fld-' + f.id} className={'fill-box' + (act === f.id ? ' on' : '') + (items.some((i) => i.field === f.id) ? ' done' : '')} aria-label={f.label}

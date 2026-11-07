@@ -453,3 +453,4 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .fill-col{width:26px;height:26px;border-radius:50%;border:2px solid var(--card);box-shadow:0 0 0 1px var(--line2);padding:0}.fill-col.on{box-shadow:0 0 0 2px var(--accent)}
 .fill-fontlist{position:absolute;left:12px;right:12px;bottom:100%;margin-bottom:6px;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 32px rgba(15,17,21,.28);padding:6px;display:flex;flex-direction:column;max-height:60vh;overflow-y:auto;z-index:5}
 .fill-fontlist button{min-height:38px;text-align:left;border:0;border-radius:10px;background:none;color:var(--text);padding:0 10px;font-size:16px}.fill-fontlist button.on{background:var(--accent-soft)}
+.fill-hint{margin:0;padding:0 14px 6px;flex:none}
