@@ -1,5 +1,6 @@
 // Page finding with OpenCV (runs offline inside the app). Returns several likely pages, best first.
 import { canvasOf, detectCorners, type Pt } from './scanlib';
+import { aiCorners } from './docai';
 
 let loading: Promise<any> | null = null;
 export function loadCv(): Promise<any> {
@@ -37,7 +38,17 @@ function rectish(q: Pt[], aspect: number): boolean {
   return true;
 }
 
-export async function findPages(src: HTMLCanvasElement): Promise<Pt[][]> {
+/** The AI result comes first. With `deep`, the edge-based shapes are added as other choices (slower, loads OpenCV). */
+export async function findPages(src: HTMLCanvasElement, deep = false): Promise<Pt[][]> {
+  let ai: Pt[] | null = null;
+  try { const r = await aiCorners(src); if (r) ai = r.quad; } catch { /* use the edge finder */ }
+  if (ai && !deep) return [ai];
+  const rest = await edgeShapes(src);
+  const list = ai ? [ai, ...rest.filter((q) => !q.every((p, j) => Math.abs(p.x - ai![j].x) < 0.04 && Math.abs(p.y - ai![j].y) < 0.04))] : rest;
+  return list;
+}
+
+async function edgeShapes(src: HTMLCanvasElement): Promise<Pt[][]> {
   const out: { q: Pt[]; score: number }[] = [];
   try {
     const cv = await loadCv();

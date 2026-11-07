@@ -12,7 +12,7 @@ import { useBack } from '../back';
 import { SliderRow, Switch } from '../ui';
 import { Back, Close, Copy, Crop, Edit, Download, Image as ImageIcon, Left, Plus, Right, RotR, Share, Trash, Type, Wand } from '../icons';
 
-interface SP { id: string; src: Blob; quad: Pt[]; cands: Pt[][]; ci: number; rot: number; filter: Filter; bright: number; thumb: string; ocr?: OcrPage }
+interface SP { id: string; src: Blob; quad: Pt[]; cands: Pt[][]; ci: number; deep?: boolean; rot: number; filter: Filter; bright: number; thumb: string; ocr?: OcrPage }
 
 const FILTERS: [Filter, string, string][] = [['orig', 'Original', '#E8E4DA'], ['magic', 'Magic', '#FFFFFF'], ['bw', 'Black & white', '#FFFFFF'], ['gray', 'Gray', '#C9C9CF']];
 
@@ -105,12 +105,12 @@ export default function Scan({ onBack, onOpen, onType }: { onBack: () => void; o
 
   const other = async () => {
     if (!p) return;
-    let cands = p.cands;
-    if (!cands.length) { flash('Looking again…', 'busy'); cands = await findPages(await sourceOf(p)); setMsg(null); }
-    if (!cands.length) { flash('No clear page edge. Drag the corners.', 'warn'); return; }
-    const ci = p.cands.length ? (p.ci + 1) % cands.length : 0;
-    upd(p.id, { cands, ci, quad: cands[ci] });
-    flash(cands.length > 1 ? `Shape ${ci + 1} of ${cands.length}` : 'Page found');
+    let cands = p.cands; let deep = !!p.deep;
+    if (!deep) { flash('Looking for other shapes…', 'busy'); cands = await findPages(await sourceOf(p), true); deep = true; setMsg(null); }
+    if (!cands.length) { upd(p.id, { deep }); flash('No clear page edge. Drag the corners.', 'warn'); return; }
+    const ci = p.deep ? (p.ci + 1) % cands.length : (cands.length > 1 ? 1 : 0);
+    upd(p.id, { cands, ci, deep, quad: cands[ci] });
+    flash(cands.length > 1 ? `Shape ${ci + 1} of ${cands.length}` : 'This is the only shape found');
   };
 
   const del = async () => {
@@ -231,7 +231,7 @@ export default function Scan({ onBack, onOpen, onType }: { onBack: () => void; o
         <div className="scan-panel">
           <p className="muted small" style={{ margin: 0 }}>Drag the four corners onto the corners of the page.</p>
           <div className="row">
-            <button className="btn tonal" onClick={other}><Wand /> {p.cands.length > 1 ? 'Try another shape' : 'Find page again'}</button>
+            <button className="btn tonal" onClick={other}><Wand /> Try another shape</button>
             <button className="btn" onClick={() => upd(p.id, { quad: defaultQuad() })}>Reset</button>
           </div>
         </div>
