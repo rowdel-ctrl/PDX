@@ -19,7 +19,7 @@ interface Item { id: string; page: number; kind: 'text' | 'tick'; text: string; 
 const COLORS = ['#0F1115', '#1B2A6B', '#C62828', '#1565C0'];
 const FIELD_PAGE_PX = 1500;
 
-export default function Fill({ onBack }: { onBack: () => void }) {
+export default function Fill({ onBack, seed }: { onBack: () => void; seed?: Blob[] }) {
   const [pages, setPages] = useState<FPage[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
@@ -37,6 +37,7 @@ export default function Fill({ onBack }: { onBack: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const flash = (t: string, k: 'ok' | 'warn' | 'busy' = 'ok', ms = 2600) => { setMsg({ t, k }); if (k !== 'busy') window.setTimeout(() => setMsg((m) => (m?.t === t ? null : m)), ms); };
   useEffect(() => { loadFormFonts(); }, []);
+  useEffect(() => { if (seed?.length) openImages(seed, true); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const fields = useMemo(() => pages.flatMap((p, pi) => p.fields.filter((f) => !hidden.includes(f.id)).map((f) => ({ ...f, page: pi }))), [pages, hidden]);
   const textFields = fields.filter((f) => f.kind !== 'tick');
@@ -64,23 +65,22 @@ export default function Fill({ onBack }: { onBack: () => void }) {
       }
       doc.destroy();
       setPdfBytes(bytes); setPages(out); setName(file.name.replace(/\.pdf$/i, '') + ' filled'); setMsg(null);
-      flash(`${out.reduce((s, p) => s + p.fields.length, 0)} places to fill found`);
+      { const n = out.reduce((s, p) => s + p.fields.length, 0); flash(n ? `${n} ${n === 1 ? "place" : "places"} to fill found` : "No places to fill found. Tap anywhere to type."); }
     } catch { flash('Could not open that PDF', 'warn'); } finally { setBusy(false); }
   };
-  const openImages = async (files: FileList | null) => {
+  const openImages = async (files: FileList | Blob[] | null, flat = false) => {
     if (!files?.length) return;
     flash('Finding the page…', 'busy'); setBusy(true);
     try {
       const out: FPage[] = [];
       for (const f of Array.from(files)) {
-        let c = await decode(f, 2200); const q = (await findPages(c))[0];
-        if (q) c = flatten(c, q, 2200);
-        c = applyFilter(c, 'magic', 0);
+        let c = await decode(f, 2200);
+        if (!flat) { const q = (await findPages(c))[0]; if (q) c = flatten(c, q, 2200); c = applyFilter(c, 'magic', 0); }
         const fl = nameDefaults(tidy(findFields(c)));
         out.push({ id: newId(), img: c.toDataURL('image/jpeg', 0.85), aspect: c.width / c.height, wPt: 595.28, hPt: 595.28 / (c.width / c.height), fields: fl, jpeg: await canvasToBytes(c, 0.88) });
       }
       setPdfBytes(null); setPages(out); setMsg(null);
-      flash(`${out.reduce((s, p) => s + p.fields.length, 0)} places to fill found`);
+      { const n = out.reduce((s, p) => s + p.fields.length, 0); flash(n ? `${n} ${n === 1 ? "place" : "places"} to fill found` : "No places to fill found. Tap anywhere to type."); }
     } catch (e) { flash((e as Error).message || 'Could not open that picture', 'warn'); } finally { setBusy(false); }
   };
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { applyFilter, canvasOf, decode, defaultQuad, flatten, rotate, toBlob, type Filter, type Pt } from '../scanlib';
 import { findPages } from '../cvpage';
-import { recognize, type OcrPage } from '../ocr';
+import { recognize, stopOcr, type OcrPage } from '../ocr';
 import { scansToPdf } from '../scanout';
 import { savePdf, sharePdf, saveFiles } from '../files';
 import { importImage, newId, FULL } from '../images';
@@ -10,7 +10,7 @@ import { newProject, saveProject } from '../storage';
 import { askChoice, askConfirm, Banner } from '../notify';
 import { useBack } from '../back';
 import { SliderRow, Switch } from '../ui';
-import { Back, Close, Copy, Crop, Download, Image as ImageIcon, Left, Plus, Right, RotR, Share, Trash, Type, Wand } from '../icons';
+import { Back, Close, Copy, Crop, Edit, Download, Image as ImageIcon, Left, Plus, Right, RotR, Share, Trash, Type, Wand } from '../icons';
 
 interface SP { id: string; src: Blob; quad: Pt[]; cands: Pt[][]; ci: number; rot: number; filter: Filter; bright: number; thumb: string; ocr?: OcrPage }
 
@@ -31,7 +31,7 @@ function thumbOf(c: HTMLCanvasElement) {
   t.getContext('2d')!.drawImage(c, 0, 0, t.width, t.height); return t.toDataURL('image/jpeg', 0.7);
 }
 
-export default function Scan({ onBack, onOpen }: { onBack: () => void; onOpen: (id: string) => void }) {
+export default function Scan({ onBack, onOpen, onType }: { onBack: () => void; onOpen: (id: string) => void; onType: (pages: Blob[]) => void }) {
   const [pages, setPages] = useState<SP[]>([]);
   const [cur, setCur] = useState(0);
   const [mode, setMode] = useState<'corners' | 'edit'>('edit');
@@ -133,14 +133,18 @@ export default function Scan({ onBack, onOpen }: { onBack: () => void; onOpen: (
     try { const b = await buildPdf(); if (share) await sharePdf(b, name); else flash(await savePdf(b, name)); setSaving(false); } catch (e) { flash((e as Error).message || 'Could not make the PDF', 'warn'); }
   };
 
+  const typeOn = async () => {
+    flash('Getting the pages ready…', 'busy');
+    try { const bl: Blob[] = []; for (const c of await finals()) bl.push(await toBlob(c, 0.9)); setMsg(null); onType(bl); } catch { flash('Could not open the pages', 'warn'); }
+  };
   const readText = async () => {
     if (!p) return;
     setText({ busy: true, value: '' });
     try {
-      const o = p.ocr ?? (await recognize(await renderPage(p, await decode(p.src, 2200), 2200)));
+      const o = p.ocr ?? (await Promise.race([recognize(await renderPage(p, await decode(p.src, 2200), 2200)), new Promise<never>((_, rej) => window.setTimeout(() => rej(new Error('slow')), 120000))]));
       upd(p.id, { ocr: o }); setPages((l) => l.map((x) => (x.id === p.id ? { ...x, ocr: o } : x)));
       setText({ busy: false, value: o.text || 'No text found on this page.' });
-    } catch { setText(null); flash('Could not read the text', 'warn'); }
+    } catch { stopOcr(); setText(null); flash('Could not read the text. Try again.', 'warn'); }
   };
   const copyText = async () => { try { await navigator.clipboard.writeText(text?.value ?? ''); flash('Copied'); } catch { flash('Could not copy', 'warn'); } };
   const saveText = async () => { flash(await saveFiles([{ bytes: new TextEncoder().encode(text?.value ?? ''), name: `${name || 'Scan'}.txt`, mime: 'text/plain' }])); };
@@ -242,7 +246,8 @@ export default function Scan({ onBack, onOpen }: { onBack: () => void; onOpen: (
             <button onClick={() => move(1)} disabled={cur >= pages.length - 1} aria-label="Move page later"><Right /><span>Later</span></button>
             <button onClick={() => upd(p.id, { rot: (p.rot + 1) % 4 })}><RotR /><span>Rotate</span></button>
             <button onClick={() => setMode('corners')}><Crop /><span>Crop</span></button>
-            <button onClick={readText}><Type /><span>Text</span></button>
+            <button onClick={typeOn}><Edit /><span>Type</span></button>
+            <button onClick={readText}><Type /><span>Read</span></button>
             <button onClick={toPage}><Copy /><span>To page</span></button>
             <button onClick={del}><Trash /><span>Delete</span></button>
           </div>
@@ -272,7 +277,7 @@ export default function Scan({ onBack, onOpen }: { onBack: () => void; onOpen: (
             <div className="sheet-grab" />
             <div className="sheet-head"><b>Recognised text</b><button className="icon-btn" onClick={() => setText(null)} aria-label="Close"><Close /></button></div>
             <p className="muted small" style={{ margin: '0 0 8px' }}>English · done on your phone</p>
-            {text.busy ? <p className="muted">Reading the page…</p> : <textarea className="scan-text" readOnly value={text.value} />}
+            {text.busy ? <p className="muted">Reading the page… this can take up to a minute.</p> : <textarea className="scan-text" readOnly value={text.value} />}
             <div className="row" style={{ marginTop: 10 }}>
               <button className="btn tonal grow" disabled={text.busy} onClick={copyText}><Copy /> Copy all</button>
               <button className="btn tonal grow" disabled={text.busy} onClick={saveText}><Download /> Save as text</button>
