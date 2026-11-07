@@ -39,13 +39,13 @@ export function findFields(src: HTMLCanvasElement): Field[] {
   const maxH = Math.max(16, Math.min(34, W * 0.03)), minH = Math.max(13, W * 0.016);
   const free = (x0: number, x1: number, y: number) => {
     let h = 0;
-    for (let yy = y - 1; yy >= 0 && h < maxH; yy--) {
+    for (let yy = y - 3; yy >= 0 && h < maxH; yy--) { // the two rows next to the line are its soft edge, so they are skipped
       let on = 0, sum = 0, n = 0;
       for (let x = x0 + 2; x < x1 - 2; x++) { on += dark[yy * W + x]; sum += gray[yy * W + x]; n++; }
       if (n < 6 || on / n > 0.02 || sum / n < 226) break;
       h++;
     }
-    return h;
+    return h > 0 ? h + 2 : 0;
   };
   const kept: { x0: number; x1: number; y0: number; y1: number }[] = [];
   const vline = (x: number, ya: number, yb: number) => { // is there a vertical stroke near x between ya and yb
