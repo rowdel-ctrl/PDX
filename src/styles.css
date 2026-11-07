@@ -455,3 +455,8 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .fill-fontlist button{min-height:38px;text-align:left;border:0;border-radius:10px;background:none;color:var(--text);padding:0 10px;font-size:16px}.fill-fontlist button.on{background:var(--accent-soft)}
 .fill-hint{margin:0;padding:0 14px 6px;flex:none}
 .fill-tools .btn{white-space:nowrap;padding:0 12px}
+.scan-stage{position:relative}
+.scan-loupe{position:absolute;border-radius:50%;border:3px solid var(--accent);box-shadow:0 4px 16px rgba(15,17,21,.4);background-color:#fff;background-repeat:no-repeat;pointer-events:none;z-index:4}
+.scan-cross{position:absolute;left:50%;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px}
+.scan-cross::before,.scan-cross::after{content:'';position:absolute;background:var(--accent)}
+.scan-cross::before{left:9px;top:0;width:2px;height:20px}.scan-cross::after{top:9px;left:0;height:2px;width:20px}

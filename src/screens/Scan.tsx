@@ -174,14 +174,17 @@ export default function Scan({ onBack, onOpen, onType }: { onBack: () => void; o
 
   // dragging a corner
   const wrapRef = useRef<HTMLDivElement>(null);
+  const [loupe, setLoupe] = useState<{ x: number; y: number } | null>(null);
   const drag = (i: number) => (e: React.PointerEvent) => {
     e.preventDefault(); (e.target as HTMLElement).setPointerCapture(e.pointerId);
     const move = (ev: PointerEvent) => {
       const r = wrapRef.current!.getBoundingClientRect(); if (!p) return;
       const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
       setPages((l) => l.map((s) => (s.id === p.id ? { ...s, quad: s.quad.map((q, j) => (j === i ? { x, y } : q)), ocr: undefined } : s)));
+      setLoupe({ x, y });
     };
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    setLoupe({ x: p!.quad[i].x, y: p!.quad[i].y });
+    const up = () => { setLoupe(null); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
 
@@ -212,6 +215,15 @@ export default function Scan({ onBack, onOpen, onType }: { onBack: () => void; o
             {p.quad.map((q, i) => <span key={i} className="scan-handle" role="slider" aria-label={`Corner ${i + 1}`} style={{ left: `${q.x * 100}%`, top: `${q.y * 100}%` }} onPointerDown={drag(i)} />)}
           </div>
         )}
+        {loupe && srcUrl && (() => {
+          const D = 120, Z = 3, left = loupe.x < 0.5;
+          const bw = box.w * Z, bh = box.h * Z;
+          return (
+            <div className="scan-loupe" aria-hidden="true" style={{ width: D, height: D, [left ? 'right' : 'left']: 10, [loupe.y < 0.3 ? 'bottom' : 'top']: 10, backgroundImage: `url(${srcUrl})`, backgroundSize: `${bw}px ${bh}px`, backgroundPosition: `${D / 2 - loupe.x * bw}px ${D / 2 - loupe.y * bh}px` }}>
+              <span className="scan-cross" />
+            </div>
+          );
+        })()}
         {p && mode === 'edit' && (preview ? <img className="scan-prev" src={preview} alt="Scanned page" /> : <span className="muted">Working…</span>)}
       </div>
 
@@ -246,7 +258,7 @@ export default function Scan({ onBack, onOpen, onType }: { onBack: () => void; o
             <button onClick={() => move(1)} disabled={cur >= pages.length - 1} aria-label="Move page later"><Right /><span>Later</span></button>
             <button onClick={() => upd(p.id, { rot: (p.rot + 1) % 4 })}><RotR /><span>Rotate</span></button>
             <button onClick={() => setMode('corners')}><Crop /><span>Crop</span></button>
-            <button onClick={typeOn}><Edit /><span>Type</span></button>
+            <button onClick={typeOn}><Edit /><span>Text</span></button>
             <button onClick={readText}><Type /><span>Read</span></button>
             <button onClick={toPage}><Copy /><span>To page</span></button>
             <button onClick={del}><Trash /><span>Delete</span></button>

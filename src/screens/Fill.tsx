@@ -37,6 +37,8 @@ export default function Fill({ onBack, seed }: { onBack: () => void; seed?: Blob
   const inputRef = useRef<HTMLInputElement>(null);
   const flash = (t: string, k: 'ok' | 'warn' | 'busy' = 'ok', ms = 2600) => { setMsg({ t, k }); if (k !== 'busy') window.setTimeout(() => setMsg((m) => (m?.t === t ? null : m)), ms); };
   useEffect(() => { loadFormFonts(); }, []);
+  const seeded = useRef(false);
+  useEffect(() => { if (seed?.length && pages.length && !seeded.current) { seeded.current = true; addText(); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pages.length]);
   useEffect(() => { if (seed?.length) openImages(seed, true); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const fields = useMemo(() => pages.flatMap((p, pi) => p.fields.filter((f) => !hidden.includes(f.id)).map((f) => ({ ...f, page: pi }))), [pages, hidden]);
