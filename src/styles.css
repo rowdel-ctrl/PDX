@@ -460,3 +460,4 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .scan-cross{position:absolute;left:50%;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px}
 .scan-cross::before,.scan-cross::after{content:'';position:absolute;background:var(--accent)}
 .scan-cross::before{left:9px;top:0;width:2px;height:20px}.scan-cross::after{top:9px;left:0;height:2px;width:20px}
+.update-card{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:60;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 10px 32px rgba(15,17,21,.3);padding:10px 10px 10px 16px;display:flex;align-items:center;gap:8px;font-size:13px;max-width:696px;margin:0 auto}
