@@ -320,6 +320,7 @@ const MemoTextItem = memo(TextItem, (a, b) => a.t === b.t && a.c === b.c);
 export default function PageCanvas(p: {
   page: Page; pageNo: number; pageNumbers: boolean; unit: Unit; selectedIds: string[];
   onPick: (id: string, how: 'tap' | 'drag' | 'longpress') => void; onBlank: () => void;
+  onPageSwipe: (direction: -1 | 1) => void;
   onMoveMany: (moves: { id: string; x: number; y: number }[]) => void;
   marquee?: boolean; onMarquee?: (ids: string[]) => void;
   onScaleMany: (f: number, ox: number, oy: number, nx: number, ny: number) => void;
@@ -356,6 +357,7 @@ export default function PageCanvas(p: {
   const [hover, setHover] = useState<string | null>(null);
   const hoverRef = useRef<string | null>(null);
   const pan1 = useRef<{ x: number; y: number } | null>(null);
+  const pageSwipeStart = useRef<{ x: number; y: number } | null>(null);
   const handRef = useRef(false); handRef.current = !!p.hand;
   // Hand tool adds some room around the page so it can be moved even when it fits on screen.
   useLayoutEffect(() => { const el = desk.current; if (el) { el.scrollLeft = p.hand ? 120 : 0; el.scrollTop = p.hand ? 160 : 0; } }, [p.hand]);   // one-finger pan that started on empty page
@@ -412,6 +414,7 @@ export default function PageCanvas(p: {
       return { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), x: (a.clientX + b.clientX) / 2 - r.left, y: (a.clientY + b.clientY) / 2 - r.top };
     };
     const start = (e: TouchEvent) => {
+      if (e.touches.length !== 1) pageSwipeStart.current = null;
       if (e.touches.length === 1 && handRef.current) { pan1.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; return; }   // Hand tool: one finger moves the view
       if (e.touches.length !== 2) return;
       (Konva as unknown as { DD?: { node?: Konva.Node } }).DD?.node?.stopDrag();
@@ -613,6 +616,15 @@ export default function PageCanvas(p: {
     const x = Math.min(r.x0, r.x1) / kz, y = Math.min(r.y0, r.y1) / kz;
     p.onMarquee?.(idsInRect(page, { x, y, w: Math.abs(r.x1 - r.x0) / kz, h: Math.abs(r.y1 - r.y0) / kz }));
   };
+  const pageSwipeEnd = (e: TouchEvent) => {
+    const start = pageSwipeStart.current;
+    pageSwipeStart.current = null;
+    const touch = e.changedTouches[0];
+    if (!start || !touch || zoomRef.current > 1 || p.hand || p.marquee) return;
+    const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
+    const threshold = Math.max(56, (desk.current?.clientWidth ?? 0) * 0.14);
+    if (Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.35) p.onPageSwipe(dx < 0 ? 1 : -1);
+  };
   const pnSize = 10 * PT_MM * kz;
 
   return (
@@ -623,15 +635,18 @@ export default function PageCanvas(p: {
             <div style={{ width: S.w, height: S.h, transform: `scale(${viewScale})`, transformOrigin: 'top left', boxShadow: '0 2px 14px rgba(0,0,0,.25)' }}>
             <Stage ref={stageRef} width={S.w} height={S.h}
               onMouseMove={() => marqueeMove()} onTouchMove={() => marqueeMove()}
-              onMouseUp={() => marqueeEnd()} onTouchEnd={() => marqueeEnd()}>
+              onMouseUp={() => marqueeEnd()}               onTouchEnd={(e) => { marqueeEnd(); pageSwipeEnd(e.evt as TouchEvent); }}
+              onTouchCancel={(e) => { marqueeEnd(); pageSwipeEnd(e.evt as TouchEvent); }}>
               <Layer>
                 <Rect width={S.w} height={S.h} fill={page.background}
                   onClick={() => { if (mqMoved.current) { mqMoved.current = false; return; } p.onBlank(); }}
                   onTap={() => { if (mqMoved.current) { mqMoved.current = false; return; } p.onBlank(); }}
                   onMouseDown={(e) => { if (!p.marquee || p.hand) return; const q = e.target.getStage()!.getPointerPosition()!; mqMoved.current = false; setMq({ x0: q.x, y0: q.y, x1: q.x, y1: q.y }); }}
                   onTouchStart={(e) => {
-                    const t = (e.evt as TouchEvent).touches[0];
-                    if (p.marquee && !p.hand && (e.evt as TouchEvent).touches.length === 1) { const q = e.target.getStage()!.getPointerPosition()!; mqMoved.current = false; setMq({ x0: q.x, y0: q.y, x1: q.x, y1: q.y }); return; }
+                    const event = e.evt as TouchEvent, t = event.touches[0];
+                    if (event.touches.length === 1 && !p.marquee && !p.hand && !p.adjust && zoomRef.current <= 1) pageSwipeStart.current = { x: t.clientX, y: t.clientY };
+                    else pageSwipeStart.current = null;
+                    if (p.marquee && !p.hand && event.touches.length === 1) { const q = e.target.getStage()!.getPointerPosition()!; mqMoved.current = false; setMq({ x0: q.x, y0: q.y, x1: q.x, y1: q.y }); return; }
                     if (t && zoomRef.current > 1) pan1.current = { x: t.clientX, y: t.clientY };
                   }} />
                 {m > 2 && <Rect x={m} y={m} width={S.w - 2 * m} height={S.h - 2 * m} stroke="#8a93a6" dash={[5 / canvasZoom, 4 / canvasZoom]} strokeWidth={1 / canvasZoom} listening={false} />}

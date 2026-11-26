@@ -8,6 +8,7 @@ import { faceFit, findFaces, mainFace, type Face } from '../vision';
 import { useBack } from '../back';
 import { askChoice, askConfirm, kindOf, Toast, type ToastKind } from '../notify';
 import PageCanvas, { type SelBox } from '../PageCanvas';
+import PagePill from '../PagePill';
 import CropCard from '../CropCard';
 import PageGrid from '../PageGrid';
 import { FloatingToolbar } from '../Toolbar';
@@ -716,11 +717,11 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
 
         <PageCanvas
           page={page} pageNo={pi + 1} pageNumbers={proj.pageNumbers} unit={unit} selectedIds={selIds}
-          onPick={onPick} onBlank={() => { setSel([]); setAdjust(false); }} onMoveMany={moveMany} onScaleMany={scaleMany} marquee={multi} onMarquee={(ids) => { if (ids.length) setSel(ids); }}
+          onPick={onPick} onBlank={() => { setSel([]); setAdjust(false); }} onPageSwipe={(direction) => { const next = pi + direction; if (next >= 0 && next < proj.pages.length) goPage(next); }} onMoveMany={moveMany} onScaleMany={scaleMany} marquee={multi} onMarquee={(ids) => { if (ids.length) setSel(ids); }}
           onChange={updateImage} onChangeText={updateText} onChangeFrame={(fid, patch) => updateFrame(fid, patch)} onSwap={swap}
           hand={hand} adjust={adjust} dropTarget={over} border={proj.frameBorder} cropMarks={proj.cropMarks} hitRef={hit}
           onSelBox={setSelBox} onDragging={setDragging}
-          padB={showTools || cropping ? 14 : 92} reserve={cropping ? '208px' : showTools ? 'calc(92px + var(--sheet-h))' : '0px'}
+          padB={showTools || cropping ? 14 : 142} reserve={cropping ? '208px' : showTools ? 'calc(92px + var(--sheet-h))' : '0px'}
           faces={cropping ? faces : []} onPickFace={pickFace} onSnap={snapIntoFrame} focusId={cropping ? selFrame?.id : null}
         >
           <button className={'fab-small second' + (hand ? ' on' : '')} aria-pressed={hand} aria-label="Hand tool: move the view with one finger" onClick={() => setHand(!hand)}><Hand /></button>
@@ -746,6 +747,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         </PageCanvas>
 
         <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
+        <PagePill project={proj} current={pi} hide={cropping} above={showTools} onGo={goPage} onAdd={addPage} onGrid={() => setGridOpen(true)} />
         <section className={'sheetpanel' + (panel ? ' open' : '')} aria-label={TITLES[shownPanel]} aria-hidden={!panel}>
           <div className="sheetpanel-head">
             <b>{shownPanel === 'item' ? (selFrame ? 'Frame' : 'Crop') : TITLES[shownPanel]}</b>

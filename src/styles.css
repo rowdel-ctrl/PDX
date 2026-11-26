@@ -111,6 +111,16 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .ftb-menu button{min-height:42px;padding:0 12px;border:0;background:none;border-radius:10px;display:flex;gap:10px;align-items:center;text-align:left;font-size:13px;font-weight:500;color:var(--text)}
 .ftb-menu button:active{background:var(--chip)}
 
+/* Always-available page navigation; page settings stay in the Pages panel. */
+.pagepill{position:absolute;left:0;right:0;bottom:100px;display:flex;justify-content:center;z-index:8;pointer-events:none;transition:opacity .3s,transform .4s var(--ease)}
+.pagepill.hide{opacity:0;transform:translateY(8px)}
+.pagepill.above-sheet{bottom:calc(92px + var(--sheet-h) + 10px)}
+.pagepill-in{pointer-events:auto;height:34px;border-radius:17px;background:var(--glass);backdrop-filter:blur(14px);border:1px solid var(--line);box-shadow:0 4px 14px rgba(15,17,21,.12);display:flex;align-items:center;padding:0 6px 0 4px;font-family:var(--head);font-size:12px;font-weight:500;gap:2px}
+.pagepill-in button{width:28px;height:28px;border:0;background:none;color:var(--sub);display:grid;place-items:center;border-radius:14px}
+.pagepill-in button:disabled{opacity:.3}
+.pagepill-in svg{width:16px;height:16px}
+.pagepill-sep{width:1px;height:14px;background:var(--line);margin:0 4px}
+
 /* dock */
 .dock{position:absolute;left:8px;right:8px;bottom:22px;display:flex;justify-content:center;z-index:12;pointer-events:none;transition:transform .45s var(--ease),opacity .3s}
 .dock.hide{transform:translateY(140%);opacity:0}

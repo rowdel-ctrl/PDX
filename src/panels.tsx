@@ -428,6 +428,7 @@ export function PagePanel() {
             <span>Page {ed.pi + 1} of {proj.pages.length}</span>
             <button aria-label="Next page" disabled={ed.pi >= proj.pages.length - 1} onClick={() => ed.goPage(ed.pi + 1)}><Right /></button>
           </div>
+          <span className="muted small">Swipe left or right on empty canvas to switch pages.</span>
           <div className="page-actions">
             <button className="btn tonal" onClick={ed.addPage}><Plus /> Add page</button>
             <button className="btn" onClick={ed.openGrid}><Grid /> All pages</button>
