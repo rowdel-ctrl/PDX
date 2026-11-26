@@ -15,9 +15,10 @@ const PRIMARY = '#7C5CFF';
 const TEAL = '#14B8A6';
 export const PAGE_HIT = '__page__';
 
-type Guides = { v: number[]; h: number[] };
+type Guides = { v: number[]; h: number[]; label?: string };
 type Size = { w: number; h: number };
-type B = { x: number; y: number; w: number; h: number };
+type B = { x: number; y: number; w: number; h: number; name?: string };
+type SnapPoint = { at: number; label: string };
 export interface SelBox { x: number; y: number; w: number; h: number }
 
 function useVariant(file: string, rot: number, crop = FULL, maxPx = 1400) {
@@ -32,25 +33,56 @@ function useVariant(file: string, rot: number, crop = FULL, maxPx = 1400) {
 }
 
 /** Snap a node's bounding box to page centre/edges/margins and other items. Moves the node. */
-function snap(node: Konva.Node, others: B[], S: Size, m: number): Guides {
+function snap(node: Konva.Node, others: B[], S: Size, m: number, movingName: string): Guides {
   const r = node.getClientRect({ skipStroke: true, skipShadow: true, relativeTo: node.getLayer() ?? undefined });
-  const g = snapRect({ x: r.x, y: r.y, w: r.width, h: r.height }, others, S, m);
+  const g = snapRect(
+    { x: r.x, y: r.y, w: r.width, h: r.height },
+    others,
+    S,
+    m,
+    movingName,
+  );
   node.x(node.x() + g.dx); node.y(node.y() + g.dy);
   return g.guides;
 }
 
 /** Snap a rectangle (page px) to page edges/centre/margins and other items. Returns the shift to apply. */
-function snapRect(r: B, others: B[], S: Size, m: number): { dx: number; dy: number; guides: Guides } {
-  const xs = [0, S.w / 2, S.w, m, S.w - m], ys = [0, S.h / 2, S.h, m, S.h - m];
-  for (const o of others) { xs.push(o.x, o.x + o.w / 2, o.x + o.w); ys.push(o.y, o.y + o.h / 2, o.y + o.h); }
-  const best = (edges: number[], cands: number[]) => {
-    let d = SNAP_PX + 1, at = 0;
-    for (const e of edges) for (const c of cands) if (Math.abs(c - e) < Math.abs(d)) { d = c - e; at = c; }
-    return Math.abs(d) <= SNAP_PX ? { d, at } : null;
+function snapRect(r: B, others: B[], S: Size, m: number, movingName: string): { dx: number; dy: number; guides: Guides } {
+  const xs: SnapPoint[] = [
+    { at: 0, label: 'page left edge' }, { at: S.w / 2, label: 'page center' }, { at: S.w, label: 'page right edge' },
+    { at: m, label: 'left margin' }, { at: S.w - m, label: 'right margin' },
+  ];
+  const ys: SnapPoint[] = [
+    { at: 0, label: 'page top edge' }, { at: S.h / 2, label: 'page center' }, { at: S.h, label: 'page bottom edge' },
+    { at: m, label: 'top margin' }, { at: S.h - m, label: 'bottom margin' },
+  ];
+  const addItemPoints = (box: B) => {
+    const name = box.name ?? 'item';
+    xs.push({ at: box.x, label: `${name} left edge` }, { at: box.x + box.w / 2, label: `${name} center` }, { at: box.x + box.w, label: `${name} right edge` });
+    ys.push({ at: box.y, label: `${name} top edge` }, { at: box.y + box.h / 2, label: `${name} center` }, { at: box.y + box.h, label: `${name} bottom edge` });
   };
-  const sx = best([r.x, r.x + r.w / 2, r.x + r.w], xs);
-  const sy = best([r.y, r.y + r.h / 2, r.y + r.h], ys);
-  return { dx: sx ? sx.d : 0, dy: sy ? sy.d : 0, guides: { v: sx ? [sx.at] : [], h: sy ? [sy.at] : [] } };
+  others.forEach(addItemPoints);
+  const best = (edges: SnapPoint[], cands: SnapPoint[]) => {
+    let d = SNAP_PX + 1, at = 0, edge = '', target = '';
+    for (const e of edges) for (const c of cands) if (Math.abs(c.at - e.at) < Math.abs(d)) {
+      d = c.at - e.at; at = c.at; edge = e.label; target = c.label;
+    }
+    return Math.abs(d) <= SNAP_PX ? { d, at, label: `${movingName} ${edge} aligned to ${target}` } : null;
+  };
+  const sx = best(
+    [{ at: r.x, label: 'left edge' }, { at: r.x + r.w / 2, label: 'center' }, { at: r.x + r.w, label: 'right edge' }],
+    xs,
+  );
+  const sy = best(
+    [{ at: r.y, label: 'top edge' }, { at: r.y + r.h / 2, label: 'center' }, { at: r.y + r.h, label: 'bottom edge' }],
+    ys,
+  );
+  const labels = [sx?.label, sy?.label].filter((label): label is string => !!label);
+  return {
+    dx: sx ? sx.d : 0,
+    dy: sy ? sy.d : 0,
+    guides: { v: sx ? [sx.at] : [], h: sy ? [sy.at] : [], label: labels.length ? labels.join(' / ') : undefined },
+  };
 }
 
 interface Ctx {
@@ -346,8 +378,12 @@ export default function PageCanvas(p: {
   const selected = new Set(selectedIds);
 
   const boxes = (skip: Set<string>): B[] => [
-    ...page.images.filter((i) => !skip.has(i.id)).map((i) => ({ x: i.x * S.w, y: i.y * S.h, w: i.w * S.w, h: i.h * S.h })),
-    ...page.frames.filter((f) => !skip.has(f.id)).map((f) => ({ x: f.x * S.w, y: f.y * S.h, w: f.w * S.w, h: f.h * S.h })),
+    ...page.images.filter((i) => !skip.has(i.id)).map((i) => {
+      const n = nodes.current.get(i.id);
+      const r = n?.getClientRect({ skipStroke: true, skipShadow: true, relativeTo: n.getLayer() ?? undefined });
+      return r ? { x: r.x, y: r.y, w: r.width, h: r.height, name: 'Photo' } : { x: i.x * S.w, y: i.y * S.h, w: i.w * S.w, h: i.h * S.h, name: 'Photo' };
+    }),
+    ...page.frames.filter((f) => !skip.has(f.id)).map((f) => ({ x: f.x * S.w, y: f.y * S.h, w: f.w * S.w, h: f.h * S.h, name: 'Frame' })),
   ];
 
   const reg = (id: string) => {
@@ -357,7 +393,7 @@ export default function PageCanvas(p: {
   };
 
   const haptic = (g: Guides) => {
-    const key = `${g.v}|${g.h}`;
+    const key = `${g.v}|${g.h}|${g.label ?? ''}`;
     if ((g.v.length || g.h.length) && key !== hapticKey.current) navigator.vibrate?.(8);
     hapticKey.current = (g.v.length || g.h.length) ? key : '';
   };
@@ -384,7 +420,10 @@ export default function PageCanvas(p: {
         const nid = f ? f.id : null;
         if (nid !== hoverRef.current) { hoverRef.current = nid; setHover(nid); if (nid) navigator.vibrate?.(10); }
       }
-      if (starts.current.size <= 1) { const g = snap(node, boxes(new Set([id])), S, m); haptic(g); setGuides(g); return; }
+      if (starts.current.size <= 1) {
+        const movingName = page.images.some((i) => i.id === id) ? 'Photo' : page.frames.some((f) => f.id === id) ? 'Frame' : 'Text';
+        const g = snap(node, boxes(new Set([id])), S, m, movingName); haptic(g); setGuides(g); return;
+      }
       const o = starts.current.get(id)!;
       const dx = node.x() - o.x, dy = node.y() - o.y;
       for (const [sid, st] of starts.current) if (sid !== id) nodes.current.get(sid)?.position({ x: st.x + dx, y: st.y + dy });
@@ -393,7 +432,7 @@ export default function PageCanvas(p: {
       if (rs.length) {
         const x0 = Math.min(...rs.map((q) => q.x)), y0 = Math.min(...rs.map((q) => q.y));
         const x1 = Math.max(...rs.map((q) => q.x + q.width)), y1 = Math.max(...rs.map((q) => q.y + q.height));
-        const g = snapRect({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, boxes(new Set(starts.current.keys())), S, m);
+        const g = snapRect({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, boxes(new Set(starts.current.keys())), S, m, 'Selection');
         if (g.dx || g.dy) for (const sid of starts.current.keys()) { const n = nodes.current.get(sid); if (n) n.position({ x: n.x() + g.dx, y: n.y() + g.dy }); }
         haptic(g.guides); setGuides(g.guides);
       }
@@ -526,6 +565,7 @@ export default function PageCanvas(p: {
           </div>
         </div>
       </div>
+      {guides.label && <div className="snap-feedback">{guides.label}</div>}
       {p.children}
       {hud && <div className="hud">{hud}</div>}
       <div className="zoomctl">

@@ -791,6 +791,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
 
         {toast && <Toast text={toast.text} kind={toast.kind} onDismiss={() => setToast(null)} />}
         {exporting && <ExportSheet project={proj} onClose={() => setExporting(false)}
+          onPrinterCheck={() => { setExporting(false); setPrinterOpen(true); }}
           onShow={(pgIdx, id) => { setExporting(false); goPage(pgIdx); setSel([id]); }}
           onShrink={(pgIdx, id, f) => editPage((pg) => {
             const it = findItem(pg, id); if (!it || it.kind === 'text') return pg;

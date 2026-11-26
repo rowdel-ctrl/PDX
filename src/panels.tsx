@@ -10,6 +10,7 @@ import { GROUPS, TEMPLATES } from './templates';
 import { newPage } from './storage';
 import { PAGE_HIT } from './PageCanvas';
 import { myTemplates, removeMyTemplate, saveMyTemplate } from './usertemplates';
+import { deleteFramePreset, listFramePresets, saveFramePreset, type FramePreset } from './framepresets';
 import { More, Segmented, SliderRow, Swatches, Switch } from './ui';
 import type { Frame, PageImage } from './types';
 import { Back, Crop, Edit, Face, FrameIcon, Plus, RotR, Template, Trash, Type, Wand } from './icons';
@@ -20,7 +21,7 @@ export const FRAME_SIZES: [string, number, number][] = [
 const SIZE_CARDS: [string, string, number, number][] = [
   ['Wallet', '2×3 in', 50.8, 76.2], ['2R', '2.5×3.5 in', 63.5, 88.9], ['3R', '3.5×5 in', 88.9, 127], ['4R', '4×6 in', 101.6, 152.4],
   ['5R', '5×7 in', 127, 177.8], ['6R', '6×8 in', 152.4, 203.2], ['8R', '8×10 in', 203.2, 254],
-  ['Passport', '35×45 mm', 35, 45], ['2×2 in', '50.8 mm', 50.8, 50.8], ['1.5×1.5 in', '38.1 mm', 38.1, 38.1], ['1×1 in', '25.4 mm', 25.4, 25.4], ['3×4 cm', '30×40 mm', 30, 40],
+  ['Passport', '35×45 mm', 35, 45], ['ID card', '85.6×54 mm', 54, 85.6], ['2×2 in', '50.8 mm', 50.8, 50.8], ['1.5×1.5 in', '38.1 mm', 38.1, 38.1], ['1×1 in', '25.4 mm', 25.4, 25.4], ['3×4 cm', '30×40 mm', 30, 40],
 ];
 const PHOTO_SIZES: [string, number, number][] = [
   ['Passport 35×45 mm', 35, 45], ['US 2×2 in', 50.8, 50.8], ['Wallet 2.5×3.5 in', 63.5, 88.9], ['4×6 in', 101.6, 152.4], ['5×7 in', 127, 177.8],
@@ -138,7 +139,53 @@ function FramesTab() {
         <Switch label="Center faces automatically" hint="Off by default. New photos go on the biggest face." checked={ed.autoFace} onChange={ed.setAutoFace} />
         {page.frames.length > 0 && <button className="btn danger-outline" onClick={ed.clearFrames}><Trash /> Remove all frames</button>}
       </More>
+      <SavedFrameSizes />
     </>
+  );
+}
+
+function SavedFrameSizes() {
+  const ed = useEd();
+  const [presets, setPresets] = useState<FramePreset[]>([]);
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    try { setPresets(listFramePresets()); } catch (e) { setError((e as Error).message); }
+  }, []);
+
+  const save = () => {
+    try {
+      const updating = presets.some((p) => p.name.toLocaleLowerCase() === name.trim().toLocaleLowerCase());
+      const next = saveFramePreset(name, ed.fsize.w, ed.fsize.h);
+      setPresets(next); setName(''); setError('');
+      ed.say(updating ? 'Frame preset updated' : 'Frame preset saved');
+    } catch (e) { setError((e as Error).message); }
+  };
+  const remove = (id: string) => {
+    try { setPresets(deleteFramePreset(id)); setError(''); }
+    catch (e) { setError((e as Error).message); }
+  };
+  const add = (preset: FramePreset) => {
+    ed.setFsize(preset.wMm, preset.hMm);
+    ed.addFrameSized(preset.wMm, preset.hMm);
+  };
+
+  return (
+    <More title="My frame sizes">
+      <p className="muted small" style={{ margin: 0 }}>Save the current size for quick reuse in any project.</p>
+      <div className="suffix">
+        <input aria-label="Frame preset name" placeholder="Name this size" value={name} onChange={(e) => setName(e.target.value)} />
+        <button className="btn tonal" disabled={!name.trim()} onClick={save}>Save size</button>
+      </div>
+      {error && <span className="muted small" role="alert">{error}</span>}
+      {presets.length ? presets.map((preset) => (
+        <div className="saved-frame-size" key={preset.id}>
+          <span><b>{preset.name}</b><small>{fmt(preset.wMm, ed.unit)} × {fmt(preset.hMm, ed.unit)} {ed.unit}</small></span>
+          <button className="btn tonal" onClick={() => add(preset)}>Add</button>
+          <button className="icon-btn" aria-label={`Delete ${preset.name}`} onClick={() => remove(preset.id)}>×</button>
+        </div>
+      )) : <span className="muted small">No saved frame sizes yet.</span>}
+    </More>
   );
 }
 

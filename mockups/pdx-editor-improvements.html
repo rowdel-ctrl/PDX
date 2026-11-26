@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PDX editor improvements · concept mockup</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #242629;
+      --muted: #777b80;
+      --line: #e8e8e3;
+      --paper: #fff;
+      --canvas: #f3f3ef;
+      --purple: #7658e8;
+      --purple-soft: #f1edff;
+      --mint: #e8f7ef;
+      --green: #27794b;
+      --pink: #e84492;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; color: var(--ink); background: #fafaf8; }
+    button, input { font: inherit; }
+    button { color: inherit; cursor: pointer; }
+    .app { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
+    .sidebar { display: flex; flex-direction: column; padding: 22px 14px; border-right: 1px solid var(--line); background: #fff; }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 24px; font-size: 15px; font-weight: 750; letter-spacing: -.03em; }
+    .brand-mark { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 10px; color: white; background: var(--purple); font-size: 16px; }
+    .nav-label { padding: 12px 10px 7px; color: #a1a3a2; font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .nav { display: grid; gap: 4px; }
+    .nav button { display: flex; align-items: center; gap: 11px; min-height: 40px; padding: 0 11px; border: 0; border-radius: 10px; background: transparent; color: #696d70; text-align: left; font-size: 12px; }
+    .nav button.active { color: #5038b8; background: var(--purple-soft); font-weight: 650; }
+    .nav-icon { display: grid; width: 20px; place-items: center; color: currentColor; font-size: 15px; }
+    .side-bottom { margin-top: auto; padding: 14px 10px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .workspace { min-width: 0; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; height: 66px; padding: 0 28px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.82); }
+    .crumb { color: var(--muted); font-size: 11px; }
+    .crumb strong { color: var(--ink); font-weight: 650; }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
+    .saved { color: #7d827e; font-size: 11px; }
+    .btn { min-height: 34px; padding: 0 12px; border: 1px solid #e4e4df; border-radius: 9px; background: #fff; font-size: 11px; font-weight: 650; }
+    .btn:hover { background: #f8f8f5; }
+    .btn.primary { border-color: var(--purple); color: white; background: var(--purple); }
+    .btn.primary:hover { background: #6547d5; }
+    .content { max-width: 1320px; margin: auto; padding: 28px 30px 36px; }
+    .page-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+    h1 { margin: 0 0 5px; font-size: 22px; letter-spacing: -.045em; }
+    .subheading { color: var(--muted); font-size: 11px; }
+    .concept-label { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid #e9e3ff; border-radius: 20px; color: #5c45b1; background: #f7f5ff; font-size: 10px; font-weight: 650; }
+    .concept-label:before { width: 6px; height: 6px; border-radius: 50%; background: var(--purple); content: ""; }
+    .editor { display: grid; grid-template-columns: minmax(360px, 1fr) 315px; min-height: 660px; overflow: hidden; border: 1px solid #e7e7e2; border-radius: 16px; background: white; box-shadow: 0 12px 34px rgba(32,34,32,.045); }
+    .stage-column { display: flex; flex-direction: column; min-width: 0; background: var(--canvas); }
+    .stage-toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: 0 18px; border-bottom: 1px solid #e7e7e2; background: rgba(255,255,255,.74); }
+    .stage-title { font-size: 11px; font-weight: 700; }
+    .stage-meta { display: flex; gap: 7px; color: var(--muted); font-size: 10px; }
+    .stage-meta span { padding: 5px 8px; border: 1px solid #e7e7e2; border-radius: 20px; background: #fff; }
+    .stage { display: grid; flex: 1; min-height: 580px; place-items: center; padding: 26px; }
+    .sheet { position: relative; width: min(100%, 410px); aspect-ratio: 210 / 297; padding: 8.5% 9%; background: var(--paper); box-shadow: 0 7px 24px rgba(31,35,32,.14); }
+    .sheet:before { position: absolute; inset: 5%; border: 1px dashed #d3d5d3; content: ""; pointer-events: none; }
+    .sheet-caption { position: absolute; top: 3%; left: 9%; color: #9a9d9a; font-size: clamp(7px, .75vw, 9px); font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+    .id-card { position: absolute; left: 17%; display: flex; align-items: center; gap: 6%; width: 66%; height: 19%; overflow: hidden; padding: 5%; border: 1px solid #d5d9de; border-radius: 5px; background: linear-gradient(135deg,#fbfcff,#f4f6fb); }
+    .id-card.front { top: 25%; }
+    .id-card.back { top: 56%; background: linear-gradient(135deg,#fbfcfa,#f3f6f1); }
+    .id-photo { position: relative; flex: 0 0 28%; height: 100%; overflow: hidden; border-radius: 3px; background: linear-gradient(150deg,#d9e8f7,#b8cadb); }
+    .avatar-head { position: absolute; top: 15%; left: 32%; width: 38%; aspect-ratio: 1; border-radius: 50%; background: #d3aa8b; }
+    .avatar-body { position: absolute; bottom: -14%; left: 13%; width: 76%; height: 55%; border-radius: 46% 46% 0 0; background: #526882; }
+    .id-card.back .id-photo { background: #e8e7de; }
+    .id-lines { display: grid; flex: 1; gap: 8%; }
+    .id-lines i { display: block; width: 85%; height: 3px; border-radius: 4px; background: #d4d8de; }
+    .id-lines i:nth-child(2) { width: 60%; }
+    .id-lines i:nth-child(3) { width: 76%; }
+    .id-card.back .id-lines i { background: #d4d9d2; }
+    .card-label { position: absolute; left: 17%; color: #777c7a; font-size: clamp(7px,.72vw,9px); font-weight: 700; letter-spacing: .08em; }
+    .card-label.front-label { top: 21%; }
+    .card-label.back-label { top: 52%; }
+    .align-line { position: absolute; z-index: 2; top: 19%; bottom: 17%; left: 50%; border-left: 1.5px dashed var(--pink); }
+    .align-chip { position: absolute; z-index: 3; top: 45%; left: 52%; padding: 6px 8px; border: 1px solid #f6d4e5; border-radius: 7px; color: #a62965; background: #fff7fb; box-shadow: 0 3px 8px rgba(130,30,80,.08); font-size: clamp(7px,.7vw,9px); font-weight: 700; white-space: nowrap; }
+    .measure { position: absolute; right: 3%; bottom: 5%; left: 3%; height: 1px; border-top: 1px dashed #bbbeb9; }
+    .measure:before, .measure:after { position: absolute; top: -4px; width: 1px; height: 7px; background: #aaa; content: ""; }
+    .measure:before { left: 0; } .measure:after { right: 0; }
+    .measure span { position: absolute; top: 4px; left: 50%; color: #8d918d; font-size: 8px; transform: translateX(-50%); }
+    .inspector { display: flex; flex-direction: column; border-left: 1px solid var(--line); background: white; }
+    .inspector-head { padding: 18px 18px 13px; border-bottom: 1px solid var(--line); }
+    .inspector-head h2 { margin: 0 0 4px; font-size: 14px; letter-spacing: -.02em; }
+    .inspector-head p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .tabs { display: grid; grid-template-columns: repeat(3,1fr); gap: 4px; margin-top: 14px; padding: 3px; border-radius: 9px; background: #f2f2ef; }
+    .tabs button { min-height: 30px; border: 0; border-radius: 7px; color: #777b7b; background: transparent; font-size: 10px; font-weight: 650; }
+    .tabs button[aria-selected="true"] { color: #4936a4; background: white; box-shadow: 0 1px 3px #00000012; }
+    .panel { display: none; padding: 16px 18px; }
+    .panel.active { display: block; }
+    .section-title { margin: 0 0 9px; font-size: 10px; font-weight: 750; }
+    .help { margin: -3px 0 12px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .status-card { display: flex; align-items: flex-start; gap: 9px; padding: 11px; border: 1px solid #d7eddf; border-radius: 10px; background: #f4fbf6; }
+    .check { display: grid; flex: 0 0 19px; width: 19px; height: 19px; place-items: center; border-radius: 50%; color: white; background: #40a56b; font-size: 11px; }
+    .status-card strong { display: block; margin: 1px 0 4px; color: #255f3d; font-size: 10px; }
+    .status-card span { display: block; color: #6c8373; font-size: 9px; line-height: 1.45; }
+    .control-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 41px; border-bottom: 1px solid #f0f0ec; }
+    .control-row:last-child { border-bottom: 0; }
+    .control-row label { font-size: 10px; font-weight: 600; }
+    .control-row small { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; font-weight: 400; }
+    .switch { position: relative; width: 31px; height: 18px; padding: 0; border: 0; border-radius: 12px; background: #c9cbc8; transition: background .15s; }
+    .switch:after { position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: white; box-shadow: 0 1px 2px #0002; content: ""; transition: transform .15s; }
+    .switch[aria-checked="true"] { background: var(--purple); }
+    .switch[aria-checked="true"]:after { transform: translateX(13px); }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 11px 0 15px; }
+    .chip { padding: 6px 8px; border: 1px solid #e7e7e2; border-radius: 16px; color: #686d6b; background: #fff; font-size: 9px; }
+    .chip.selected { border-color: #d9cffd; color: #5138b1; background: #f5f2ff; }
+    .range-row { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 9px; }
+    input[type="range"] { flex: 1; accent-color: var(--purple); }
+    .radio-list { display: grid; gap: 7px; }
+    .radio-card { display: flex; align-items: center; gap: 9px; padding: 10px; border: 1px solid #e9e9e4; border-radius: 9px; cursor: pointer; }
+    .radio-card:has(input:checked) { border-color: #cfc3fb; background: #faf9ff; }
+    .radio-card input { margin: 0; accent-color: var(--purple); }
+    .radio-card strong { display: block; font-size: 10px; }
+    .radio-card span { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
+    .ruler-box { margin: 13px 0; padding: 11px; border: 1px solid #e7e7e2; border-radius: 9px; background: #fcfcfa; }
+    .ruler-top { display: flex; justify-content: space-between; margin-bottom: 13px; font-size: 9px; }
+    .ruler-top strong { font-size: 10px; }
+    .ruler { position: relative; width: 75%; height: 13px; border-bottom: 2px solid #545b59; }
+    .ruler:before, .ruler:after { position: absolute; bottom: -2px; width: 1px; height: 9px; background: #545b59; content: ""; }
+    .ruler:before { left: 0; } .ruler:after { right: 0; }
+    .ruler-label { margin-top: 5px; color: var(--muted); font-size: 8px; }
+    .warning { display: flex; gap: 8px; padding: 10px; border: 1px solid #f3dfb9; border-radius: 9px; color: #775723; background: #fffaf0; font-size: 9px; line-height: 1.45; }
+    .warning b { display: block; margin-bottom: 2px; font-size: 10px; }
+    .preset-list { display: grid; gap: 7px; }
+    .preset { display: flex; align-items: center; justify-content: space-between; padding: 10px; border: 1px solid #e9e9e4; border-radius: 9px; }
+    .preset.selected { border-color: #cfc3fb; background: #faf9ff; }
+    .preset-info { display: flex; align-items: center; gap: 9px; }
+    .preset-shape { width: 28px; height: 18px; border: 1.5px solid #9687d2; border-radius: 3px; background: #f4f1ff; }
+    .preset-shape.passport { width: 13px; height: 18px; }
+    .preset strong { display: block; font-size: 10px; }
+    .preset small { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
+    .mini-btn { min-height: 25px; padding: 0 8px; border: 1px solid #e5e3ed; border-radius: 7px; color: #604cc0; background: white; font-size: 9px; font-weight: 650; }
+    .save-form { display: grid; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .save-form label { color: #5f6462; font-size: 9px; font-weight: 650; }
+    .save-form input { width: 100%; height: 33px; margin-top: 5px; padding: 0 9px; border: 1px solid #e4e4df; border-radius: 7px; color: var(--ink); background: white; font-size: 10px; }
+    .save-form .btn { width: 100%; }
+    .panel-note { margin-top: 14px; padding-top: 11px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9px; line-height: 1.5; }
+    .toast { position: fixed; right: 22px; bottom: 20px; z-index: 5; max-width: 320px; padding: 11px 14px; border: 1px solid #ded9f3; border-radius: 10px; color: #4935a0; background: white; box-shadow: 0 8px 26px #28204822; font-size: 11px; opacity: 0; pointer-events: none; transform: translateY(8px); transition: .2s; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 64px minmax(0,1fr); }
+      .sidebar { align-items: center; padding: 16px 7px; }
+      .brand { padding: 0 0 22px; }
+      .brand-name, .nav-label, .nav button span:last-child, .side-bottom { display: none; }
+      .nav { width: 100%; }
+      .nav button { justify-content: center; padding: 0; }
+      .nav-icon { font-size: 17px; }
+      .content { padding: 22px 18px; }
+      .editor { grid-template-columns: minmax(300px,1fr) 290px; }
+      .topbar { padding: 0 18px; }
+    }
+    @media (max-width: 680px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { position: fixed; right: 0; bottom: 0; left: 0; z-index: 4; flex-direction: row; justify-content: center; height: 58px; padding: 5px 8px; border-top: 1px solid var(--line); border-right: 0; }
+      .brand { display: none; }
+      .nav { display: flex; justify-content: space-around; max-width: 450px; }
+      .nav button { width: 50px; }
+      .workspace { padding-bottom: 58px; }
+      .topbar { height: 56px; padding: 0 12px; }
+      .saved { display: none; }
+      .content { padding: 18px 12px; }
+      .page-heading { align-items: flex-start; }
+      h1 { font-size: 19px; }
+      .concept-label { display: none; }
+      .editor { grid-template-columns: 1fr; }
+      .stage { min-height: 440px; padding: 18px 22px; }
+      .sheet { width: min(100%, 340px); }
+      .inspector { border-top: 1px solid var(--line); border-left: 0; }
+      .stage-toolbar { padding: 0 12px; }
+      .stage-meta span:last-child { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="Main navigation">
+      <div class="brand"><span class="brand-mark">P</span><span class="brand-name">PDX Studio</span></div>
+      <div class="nav-label">Workspace</div>
+      <nav class="nav">
+        <button class="active" aria-current="page"><span class="nav-icon">▦</span><span>Editor</span></button>
+        <button><span class="nav-icon">▤</span><span>Projects</span></button>
+        <button><span class="nav-icon">▧</span><span>Your photos</span></button>
+      </nav>
+      <div class="nav-label">Create</div>
+      <nav class="nav">
+        <button><span class="nav-icon">＋</span><span>New layout</span></button>
+        <button><span class="nav-icon">◇</span><span>Templates</span></button>
+      </nav>
+      <div class="side-bottom">Offline-first photo layouts<br>Concept preview · not connected to a project</div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div class="crumb">Projects&nbsp; / &nbsp;<strong>ID card sheet</strong></div>
+        <div class="top-actions">
+          <span class="saved">● Saved just now</span>
+          <button class="btn" data-toast="Undo preview action">↶ Undo</button>
+          <button class="btn primary" data-toast="PDF export preview">Export PDF&nbsp; ↗</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <div class="page-heading">
+          <div>
+            <h1>Print-ready layout</h1>
+            <div class="subheading">ID card front + back&nbsp; · &nbsp;A4 portrait&nbsp; · &nbsp;2 frames</div>
+          </div>
+          <div class="concept-label">Interactive concept mockup</div>
+        </div>
+
+        <section class="editor" aria-label="Editor concept">
+          <div class="stage-column">
+            <div class="stage-toolbar">
+              <span class="stage-title">Page 1 of 1</span>
+              <div class="stage-meta"><span>A4 · 210 × 297 mm</span><span>Fit to page&nbsp; ▾</span></div>
+            </div>
+            <div class="stage">
+              <div class="sheet" aria-label="A4 print sheet preview">
+                <span class="sheet-caption">A4 · actual size preview</span>
+                <span class="card-label front-label">FRONT</span>
+                <div class="id-card front">
+                  <div class="id-photo"><i class="avatar-head"></i><i class="avatar-body"></i></div>
+                  <div class="id-lines"><i></i><i></i><i></i></div>
+                </div>
+                <span class="card-label back-label">BACK</span>
+                <div class="id-card back">
+                  <div class="id-photo"></div>
+                  <div class="id-lines"><i></i><i></i><i></i></div>
+                </div>
+                <div class="align-line" aria-hidden="true"></div>
+                <div class="align-chip">✓ Centered · ID card front</div>
+                <div class="measure"><span>Printable area · 5 mm margin</span></div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="inspector">
+            <div class="inspector-head">
+              <h2>Layout tools</h2>
+              <p>Alignment, print checks, and reusable sizes in one place.</p>
+              <div class="tabs" role="tablist" aria-label="Layout tools">
+                <button id="tab-guides" role="tab" aria-selected="true" aria-controls="panel-guides">Guides</button>
+                <button id="tab-print" role="tab" aria-selected="false" aria-controls="panel-print">Print</button>
+                <button id="tab-presets" role="tab" aria-selected="false" aria-controls="panel-presets">Presets</button>
+              </div>
+            </div>
+
+            <section class="panel active" id="panel-guides" role="tabpanel" aria-labelledby="tab-guides">
+              <p class="section-title">Snap feedback</p>
+              <div class="status-card">
+                <span class="check">✓</span>
+                <div><strong>Centered on page</strong><span>Aligned to vertical center · within 0.2 mm</span></div>
+              </div>
+              <div class="control-row" style="margin-top: 10px">
+                <label for="snap-switch">Smart guides<small>Snap while dragging items</small></label>
+                <button class="switch" id="snap-switch" role="switch" aria-checked="true" aria-label="Smart guides"></button>
+              </div>
+              <p class="section-title" style="margin-top:16px">Snap targets</p>
+              <div class="chip-row">
+                <button class="chip selected" aria-pressed="true">Page edges</button>
+                <button class="chip selected" aria-pressed="true">Page center</button>
+                <button class="chip selected" aria-pressed="true">Frames</button>
+                <button class="chip" aria-pressed="false">Other photos</button>
+              </div>
+              <div class="range-row"><span>Fine</span><input type="range" min="2" max="18" value="8" aria-label="Snap distance"><span>8 px</span></div>
+              <div class="panel-note">Guide labels identify the target and report the remaining offset, including for rotated photos.</div>
+            </section>
+
+            <section class="panel" id="panel-print" role="tabpanel" aria-labelledby="tab-print" hidden>
+              <p class="section-title">Print scale</p>
+              <div class="radio-list">
+                <label class="radio-card"><input type="radio" name="scale" checked><span><strong>Actual size · 100%</strong><span>Recommended for exact frame dimensions</span></span></label>
+                <label class="radio-card"><input type="radio" name="scale"><span><strong>Fit to printable area</strong><span>May change the final measurements</span></span></label>
+              </div>
+              <div class="ruler-box">
+                <div class="ruler-top"><strong>Calibration check</strong><span>Print this ruler</span></div>
+                <div class="ruler"></div>
+                <div class="ruler-label">This line should measure exactly 50 mm on paper.</div>
+              </div>
+              <div class="warning"><span>!</span><div><b>Check printer margins</b>Some printers cannot print to the edge. A 5 mm safe area is enabled.</div></div>
+              <div class="control-row" style="margin-top: 10px">
+                <label for="marks-switch">Crop marks<small>Show trim guides on the sheet</small></label>
+                <button class="switch" id="marks-switch" role="switch" aria-checked="true" aria-label="Crop marks"></button>
+              </div>
+              <button class="btn primary" style="width:100%;margin-top:14px" data-toast="Calibration sheet ready to preview">Preview calibration sheet</button>
+            </section>
+
+            <section class="panel" id="panel-presets" role="tabpanel" aria-labelledby="tab-presets" hidden>
+              <p class="section-title">Saved frame sizes</p>
+              <p class="help">Choose a preset to add a frame to this page.</p>
+              <div class="preset-list" id="preset-list">
+                <div class="preset selected">
+                  <div class="preset-info"><span class="preset-shape"></span><span><strong>ID card · Landscape</strong><small>85.6 × 54 mm</small></span></div>
+                  <button class="mini-btn" data-use-preset="ID card">Add</button>
+                </div>
+                <div class="preset">
+                  <div class="preset-info"><span class="preset-shape passport"></span><span><strong>Passport photo</strong><small>35 × 45 mm</small></span></div>
+                  <button class="mini-btn" data-use-preset="Passport photo">Add</button>
+                </div>
+                <div class="preset">
+                  <div class="preset-info"><span class="preset-shape"></span><span><strong>Wallet print</strong><small>50.8 × 76.2 mm</small></span></div>
+                  <button class="mini-btn" data-use-preset="Wallet print">Add</button>
+                </div>
+              </div>
+              <form class="save-form" id="save-preset">
+                <label for="preset-name">Save current frame size</label>
+                <input id="preset-name" name="name" placeholder="e.g. School photo" required>
+                <button class="btn" type="submit">＋ Save as preset</button>
+              </form>
+              <div class="panel-note">Presets stay available across projects. Custom dimensions can be edited before adding.</div>
+            </section>
+          </aside>
+        </section>
+      </div>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script>
+    const tabs = [...document.querySelectorAll('[role="tab"]')];
+    const panels = [...document.querySelectorAll('[role="tabpanel"]')];
+    tabs.forEach((tab) => tab.addEventListener('click', () => {
+      tabs.forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
+      panels.forEach((panel) => {
+        const active = panel.id === tab.getAttribute('aria-controls');
+        panel.hidden = !active;
+        panel.classList.toggle('active', active);
+      });
+    }));
+
+    document.querySelectorAll('.switch').forEach((toggle) => toggle.addEventListener('click', () => {
+      toggle.setAttribute('aria-checked', String(toggle.getAttribute('aria-checked') !== 'true'));
+    }));
+
+    document.querySelectorAll('.chip').forEach((chip) => chip.addEventListener('click', () => {
+      const selected = chip.classList.toggle('selected');
+      chip.setAttribute('aria-pressed', String(selected));
+    }));
+
+    let toastTimer;
+    const toast = document.getElementById('toast');
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 2300);
+    }
+
+    document.querySelectorAll('[data-toast]').forEach((button) => button.addEventListener('click', () => showToast(button.dataset.toast)));
+    document.querySelectorAll('[data-use-preset]').forEach((button) => button.addEventListener('click', () => showToast(`${button.dataset.usePreset} frame added to the preview`)));
+
+    document.getElementById('save-preset').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const input = document.getElementById('preset-name');
+      const name = input.value.trim();
+      if (!name) return;
+      const row = document.createElement('div');
+      row.className = 'preset';
+      row.innerHTML = '<div class="preset-info"><span class="preset-shape"></span><span><strong></strong><small>85.6 × 54 mm</small></span></div><button class="mini-btn">Add</button>';
+      row.querySelector('strong').textContent = name;
+      row.querySelector('.mini-btn').addEventListener('click', () => showToast(`${name} frame added to the preview`));
+      document.getElementById('preset-list').prepend(row);
+      input.value = '';
+      showToast(`${name} saved as a reusable preset`);
+    });
+  </script>
+</body>
+</html>

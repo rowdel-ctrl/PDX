@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Banner } from '../notify';
-import { getScale } from '../printer';
+import { buildTestSheet, getScale } from '../printer';
 import { findLowRes, LOW_DPI, SHARP_DPI, type LowPhoto } from '../quality';
 import type { Project, Quality } from '../types';
 import { buildPdf } from '../pdf';
 import { savePdf, saveFiles, sharePdf, shareFiles, type OutFile } from '../files';
-import { pdfToImages } from '../pdfsource';
+import { openPdf, pdfToImages } from '../pdfsource';
 import { fmt, presetOf } from '../units';
 import { Download, Share } from '../icons';
 
@@ -14,7 +14,7 @@ const safeName = (n: string) => n.trim().replace(/[\\/:*?"<>|]+/g, '_') || 'docu
 const Q: [Quality, string][] = [['small', 'Small'], ['standard', 'Standard'], ['high', 'High']];
 
 /** Bottom sheet over the editor: name, quality, save or share the PDF. */
-export default function ExportSheet({ project, onClose, onShrink, onShow }: { project: Project; onClose: () => void; onShrink: (page: number, id: string, factor: number) => void; onShow: (page: number, id: string) => void }) {
+export default function ExportSheet({ project, onClose, onShrink, onShow, onPrinterCheck }: { project: Project; onClose: () => void; onShrink: (page: number, id: string, factor: number) => void; onShow: (page: number, id: string) => void; onPrinterCheck: () => void }) {
   const [name, setName] = useState(project.name);
   const [quality, setQuality] = useState<Quality>('standard');
   const [fmt0, setFmt] = useState<Fmt>('pdf');
@@ -23,11 +23,78 @@ export default function ExportSheet({ project, onClose, onShrink, onShow }: { pr
   const [msg, setMsg] = useState('');
   const [low, setLow] = useState<LowPhoto[]>([]);
   const [warnOpen, setWarnOpen] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewPages, setPreviewPages] = useState(0);
+  const [previewImage, setPreviewImage] = useState('');
+  const [previewError, setPreviewError] = useState('');
+  const [showSafeArea, setShowSafeArea] = useState(true);
+  const previewDoc = useRef<Awaited<ReturnType<typeof openPdf>> | null>(null);
+  const previewRequest = useRef(0);
   useEffect(() => { let on = true; findLowRes(project).then((l) => on && setLow(l)); return () => { on = false; }; }, [project]);
+  useEffect(() => () => previewDoc.current?.destroy(), []);
   const shrinkable = low.filter((l) => l.kind === 'image');
   const pg = project.pages[0];
   const sizes = new Set(project.pages.map((p) => `${p.widthMm}x${p.heightMm}`));
   const sizeLabel = sizes.size > 1 ? 'Mixed sizes' : presetOf(pg.widthMm, pg.heightMm) ?? `${fmt(pg.widthMm, project.unit)}×${fmt(pg.heightMm, project.unit)} ${project.unit}`;
+  const previewSize = project.pages[previewPage - 1] ?? pg;
+
+  const renderPreviewPage = async (doc: NonNullable<typeof previewDoc.current>, pageNo: number) => {
+    const request = ++previewRequest.current;
+    setBusy(`Rendering preview… ${pageNo}/${doc.pages}`);
+    try {
+      const source = await doc.render(pageNo, 1200);
+      if (request === previewRequest.current) { setPreviewImage(source.preview); setPreviewError(''); setPreviewPage(pageNo); }
+    } catch (e) {
+      if (request === previewRequest.current) {
+        const message = (e as Error)?.message ?? 'Could not render this page.';
+        setPreviewError(message); setMsg(`Preview failed: ${message}`);
+      }
+    } finally {
+      if (request === previewRequest.current) setBusy('');
+    }
+  };
+
+  const preview = async () => {
+    setMsg('');
+    try {
+      setBusy('Building preview…');
+      const bytes = await buildPdf(project, quality, undefined, { noScale: fmt0 !== 'pdf' });
+      const doc = await openPdf(new Blob([bytes as BlobPart], { type: 'application/pdf' }));
+      previewDoc.current?.destroy();
+      previewDoc.current = doc;
+      setPreviewPages(doc.pages);
+      setPreviewPage(1);
+      setPreviewImage('');
+      setPreviewError('');
+      setPreviewOpen(true);
+      await renderPreviewPage(doc, 1);
+    } catch (e) {
+      setMsg(`Preview failed: ${(e as Error)?.message ?? 'Could not build the PDF preview.'}`);
+      setBusy('');
+    }
+  };
+
+  const closePreview = () => {
+    previewRequest.current++;
+    previewDoc.current?.destroy();
+    previewDoc.current = null;
+    setPreviewImage('');
+    setPreviewError('');
+    setPreviewOpen(false);
+    setBusy('');
+  };
+
+  const saveCalibrationSheet = async () => {
+    setMsg('');
+    try {
+      setBusy('Preparing calibration sheet…');
+      const bytes = await buildTestSheet();
+      setMsg(await savePdf(bytes, `${safeName(name)}-printer-test`));
+    } catch (e) {
+      setMsg(`Calibration sheet failed: ${(e as Error)?.message ?? 'Could not create the test sheet.'}`);
+    } finally { setBusy(''); }
+  };
 
   const run = async (kind: 'save' | 'share') => {
     setMsg('');
@@ -72,6 +139,16 @@ export default function ExportSheet({ project, onClose, onShrink, onShow }: { pr
           </div>
         )}
         {getScale() !== 1 && <p className="muted small" style={{ margin: 0 }}>Printer correction is on ({(getScale() * 100).toFixed(1)}%). Change it in Printer check on the home screen.</p>}
+        <div className="print-check">
+          <b>Print preview and calibration</b>
+          <span>Preview the generated pages, including borders and cut marks. For exact dimensions, print at “Actual size” (100%), not “Fit to page”.</span>
+          <div className="row2">
+            <button className="btn tonal" disabled={!!busy} onClick={preview}>Preview PDF</button>
+            <button className="btn" disabled={!!busy} onClick={saveCalibrationSheet}>Save 100 mm test sheet</button>
+          </div>
+          <span className="muted small">Measure the test sheet before printing exact-size photos. Printer correction: {(getScale() * 100).toFixed(1)}%.</span>
+          <button className="btn" onClick={onPrinterCheck}>Adjust printer correction</button>
+        </div>
         <label className="field">File name
           <div className="suffix"><input value={name} onChange={(e) => setName(e.target.value)} /><span>.{fmt0}</span></div>
         </label>
@@ -92,6 +169,38 @@ export default function ExportSheet({ project, onClose, onShrink, onShow }: { pr
         {busy && <Banner kind="busy" text={busy} />}
         {msg && <Banner kind={/fail|could not/i.test(msg) ? 'warn' : 'ok'} text={msg} />}
       </div>
+      {previewOpen && (
+        <div className="pdf-preview-back" onClick={(e) => { e.stopPropagation(); closePreview(); }}>
+          <section className="pdf-preview" role="dialog" aria-modal="true" aria-label="PDF print preview" onClick={(e) => e.stopPropagation()}>
+            <div className="pdf-preview-head">
+              <b>PDF print preview</b>
+              <span>{previewPage} / {previewPages}</span>
+              <label className="pdf-safe-toggle"><input type="checkbox" checked={showSafeArea} onChange={(e) => setShowSafeArea(e.target.checked)} /> 5 mm safe area</label>
+              <button className="icon-btn" onClick={closePreview} aria-label="Close preview">✕</button>
+            </div>
+            <div className="pdf-preview-body">
+              {previewImage ? (
+                <div className="pdf-preview-page">
+                  <img src={previewImage} alt={`Rendered PDF page ${previewPage}`} />
+                  {showSafeArea && (
+                    <div className="pdf-safe-area" style={{
+                      left: `${5 / previewSize.widthMm * 100}%`, right: `${5 / previewSize.widthMm * 100}%`,
+                      top: `${5 / previewSize.heightMm * 100}%`, bottom: `${5 / previewSize.heightMm * 100}%`,
+                    }}><span>5 mm safe area · advisory</span></div>
+                  )}
+                </div>
+              ) : <span>{previewError || 'Rendering page…'}</span>}
+            </div>
+            <div className="pdf-preview-foot">
+              <span>Dashed safe area is advisory only and is not included in the PDF. Check your printer, then print at Actual size (100%).</span>
+              <div className="row2">
+                <button className="btn" disabled={!!busy || previewPage <= 1} onClick={() => previewDoc.current && renderPreviewPage(previewDoc.current, previewPage - 1)}>Previous</button>
+                <button className="btn" disabled={!!busy || previewPage >= previewPages} onClick={() => previewDoc.current && renderPreviewPage(previewDoc.current, previewPage + 1)}>Next</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

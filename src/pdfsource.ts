@@ -47,10 +47,11 @@ export async function openPdf(file: Blob) {
   const doc = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
   return {
     pages: doc.numPages,
-    async render(n: number): Promise<Source> {
+    async render(n: number, maxPx = MAX_PX): Promise<Source> {
       const page = await doc.getPage(n);
       const v1 = page.getViewport({ scale: 1 });
-      const vp = page.getViewport({ scale: MAX_PX / Math.max(v1.width, v1.height) });
+      const limit = Number.isFinite(maxPx) ? Math.max(1, Math.min(MAX_PX, maxPx)) : MAX_PX;
+      const vp = page.getViewport({ scale: limit / Math.max(v1.width, v1.height) });
       const c = document.createElement('canvas');
       c.width = Math.round(vp.width); c.height = Math.round(vp.height);
       const ctx = c.getContext('2d')!;
