@@ -13,7 +13,7 @@ import { myTemplates, removeMyTemplate, saveMyTemplate } from './usertemplates';
 import { deleteFramePreset, listFramePresets, saveFramePreset, type FramePreset } from './framepresets';
 import { More, Segmented, SliderRow, Swatches, Switch } from './ui';
 import type { Frame, PageImage } from './types';
-import { Back, Crop, Edit, Face, FrameIcon, Plus, RotR, Template, Trash, Type, Wand } from './icons';
+import { Back, Crop, Edit, Face, FrameIcon, Grid, Left, Plus, Right, RotR, Template, Trash, Type, Wand } from './icons';
 
 export const FRAME_SIZES: [string, number, number][] = [
   ['Passport 35×45', 35, 45], ['1×1 in', 25.4, 25.4], ['1.5×1.5 in', 38.1, 38.1], ['2×2 in', 50.8, 50.8], ['3×4 cm', 30, 40], ['Wallet 2×3 in', 50.8, 76.2],
@@ -421,6 +421,20 @@ export function PagePanel() {
   const pick = (name: string) => { const [a, b] = PRESETS[name]; setCustom(false); apply(landscape ? b : a, landscape ? a : b); };
   return (
     <div className="panel-body">
+      <div className="psec"><b>Pages</b>
+        <div className="page-controls">
+          <div className="page-switcher">
+            <button aria-label="Previous page" disabled={ed.pi <= 0} onClick={() => ed.goPage(ed.pi - 1)}><Left /></button>
+            <span>Page {ed.pi + 1} of {proj.pages.length}</span>
+            <button aria-label="Next page" disabled={ed.pi >= proj.pages.length - 1} onClick={() => ed.goPage(ed.pi + 1)}><Right /></button>
+          </div>
+          <div className="page-actions">
+            <button className="btn tonal" onClick={ed.addPage}><Plus /> Add page</button>
+            <button className="btn" onClick={ed.openGrid}><Grid /> All pages</button>
+          </div>
+        </div>
+      </div>
+
       <div className="psec"><b>Size</b>
         <div className="field" style={{ marginTop: 0 }}>Paper
           <div className="chips">
@@ -449,7 +463,6 @@ export function PagePanel() {
         {(custom || !preset) && <button className="btn primary wide" style={{ marginTop: 0 }} onClick={() => apply(wMm, hMm)}>Apply size</button>}
         <Swatches label="Page color" value={page.background} onChange={(c) => ed.editPage((pg) => ({ ...pg, background: c }))} />
         <Switch label="Page numbers" checked={proj.pageNumbers} onChange={(b) => ed.edit((p) => ({ ...p, pageNumbers: b }))} />
-        <button className="btn tonal" style={{ alignSelf: 'flex-start' }} onClick={ed.openGrid}>Show all pages</button>
       </div>
 
       <div className="psec"><b>Print lines</b>

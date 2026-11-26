@@ -1,33 +1,33 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayItem } from '../types';
 import { filesUsedElsewhere, listProjects, newPage, saveProject } from '../storage';
 import { applyLayout, cellCount, gridBox, LAYOUTS, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
 import { alignItems, alignGroupToPage as moveGroupToPage, distributeItems, findItem, gapItems, fillGrid, groupBox, mapSelected, reorder, scaleItems, selectWhere, setBoxMm, type SelectMode, type AlignMode, type AnyItem } from '../arrange';
 import { deleteImages, enhanceFile, evenLight as evenLightFile, FULL, importImage, makeCutout, newId, upscaleFile } from '../images';
-import RefineEdges from '../RefineEdges';
 import { faceFit, findFaces, mainFace, type Face } from '../vision';
 import { useBack } from '../back';
 import { askChoice, askConfirm, kindOf, Toast, type ToastKind } from '../notify';
 import PageCanvas, { type SelBox } from '../PageCanvas';
-import PagePill from '../PagePill';
 import CropCard from '../CropCard';
 import PageGrid from '../PageGrid';
-import ExportSheet from './Export';
 import { FloatingToolbar } from '../Toolbar';
-import SettingsSheet from '../SettingsSheet';
 import { ArrangePanel, CopiesPanel, PhotoPanel, SelectPanel } from '../toolpanels';
 import { AddPanel, ItemPanel, LayoutPanel, PagePanel, TextPanel } from '../panels';
 import { EdCtx, type AddTab, type Ed, type PanelId } from '../editorContext';
 import { TEMPLATES, type Template } from '../templates';
 import PageThumb from '../PageThumb';
 import { presetOf } from '../units';
-import { Back, Checklist, Close, Copy, Crop as CropIcon, Edit, Hand, Grid, Layers, Palette, Plus, Redo, Share, Size, Sparkle, Tune, Type, Undo, Wand, Image as ImageIcon } from '../icons';
+import { Back, Checklist, Close, Copy, Crop as CropIcon, Edit, Hand, Grid, Layers, Palette, Pages, Plus, Redo, Share, Size, Sparkle, Tune, Type, Undo, Wand, Image as ImageIcon } from '../icons';
+
+const RefineEdges = lazy(() => import('../RefineEdges'));
+const ExportSheet = lazy(() => import('./Export'));
+const SettingsSheet = lazy(() => import('../SettingsSheet'));
 
 export type Tab = PanelId;
 const NAV: [PanelId, string, () => React.ReactElement][] = [
-  ['add', 'Add', Plus], ['layout', 'Grid', Grid], ['text', 'Text', Type], ['page', 'Page', Tune], ['select', 'Select', Checklist],
+  ['add', 'Add', Plus], ['layout', 'Layouts', Grid], ['text', 'Text', Type], ['page', 'Pages', Pages], ['select', 'Select', Checklist],
 ];
-const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Grid', text: 'Text', page: 'Page', item: 'Crop', cutout: 'Cut out', color: 'Background color', arrange: 'Arrange', copies: 'Copies', select: 'Select', size: 'Group size', enhance: 'Enhance', photo: 'Photo' };
+const TITLES: Record<PanelId, string> = { add: 'Add', layout: 'Layouts', text: 'Text', page: 'Pages', item: 'Crop', cutout: 'Cut out', color: 'Background color', arrange: 'Arrange', copies: 'Copies', select: 'Select', size: 'Group size', enhance: 'Enhance', photo: 'Photo' };
 
 const filesOf = (p: Project) => new Set([
   ...p.pages.flatMap((pg) => [...pg.images.map((i) => i.file), ...pg.frames.map((f) => f.file).filter(Boolean)]),
@@ -720,7 +720,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
           onChange={updateImage} onChangeText={updateText} onChangeFrame={(fid, patch) => updateFrame(fid, patch)} onSwap={swap}
           hand={hand} adjust={adjust} dropTarget={over} border={proj.frameBorder} cropMarks={proj.cropMarks} hitRef={hit}
           onSelBox={setSelBox} onDragging={setDragging}
-          padB={showTools || cropping ? 14 : 112} reserve={cropping ? '208px' : showTools ? 'calc(92px + var(--sheet-h))' : '0px'}
+          padB={showTools || cropping ? 14 : 92} reserve={cropping ? '208px' : showTools ? 'calc(92px + var(--sheet-h))' : '0px'}
           faces={cropping ? faces : []} onPickFace={pickFace} onSnap={snapIntoFrame} focusId={cropping ? selFrame?.id : null}
         >
           <button className={'fab-small second' + (hand ? ' on' : '')} aria-pressed={hand} aria-label="Hand tool: move the view with one finger" onClick={() => setHand(!hand)}><Hand /></button>
@@ -746,8 +746,6 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         </PageCanvas>
 
         <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
-        <PagePill project={proj} current={pi} hide={showTools || cropping} onGo={goPage} onAdd={addPage} onGrid={() => setGridOpen(true)} />
-
         <section className={'sheetpanel' + (panel ? ' open' : '')} aria-label={TITLES[shownPanel]} aria-hidden={!panel}>
           <div className="sheetpanel-head">
             <b>{shownPanel === 'item' ? (selFrame ? 'Frame' : 'Crop') : TITLES[shownPanel]}</b>
@@ -797,16 +795,20 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
         </nav>
 
         {toast && <Toast text={toast.text} kind={toast.kind} onDismiss={() => setToast(null)} />}
-        {exporting && <ExportSheet project={proj} onClose={() => setExporting(false)}
-          onPrinterCheck={() => { setExporting(false); setPrinterOpen(true); }}
-          onShow={(pgIdx, id) => { setExporting(false); goPage(pgIdx); setSel([id]); }}
-          onShrink={(pgIdx, id, f) => editPage((pg) => {
-            const it = findItem(pg, id); if (!it || it.kind === 'text') return pg;
-            const b = groupBox(pg, [id]); if (!b) return pg;
-            return scaleItems(pg, [id], f, b.x, b.y, b.x + (b.w * (1 - f)) / 2, b.y + (b.h * (1 - f)) / 2);
-          }, pgIdx)} />}
-        {refine && <RefineEdges file={refine.file} bg={refine.bg} onCancel={() => setRefine(null)} onDone={(c) => applyRefined(refine.id, c)} />}
-        {printerOpen && <SettingsSheet onClose={() => setPrinterOpen(false)} />}
+        {(exporting || refine || printerOpen) && (
+          <Suspense fallback={<div className="loading-layer" role="status">Loading tools…</div>}>
+            {exporting && <ExportSheet project={proj} onClose={() => setExporting(false)}
+              onPrinterCheck={() => { setExporting(false); setPrinterOpen(true); }}
+              onShow={(pgIdx, id) => { setExporting(false); goPage(pgIdx); setSel([id]); }}
+              onShrink={(pgIdx, id, f) => editPage((pg) => {
+                const it = findItem(pg, id); if (!it || it.kind === 'text') return pg;
+                const b = groupBox(pg, [id]); if (!b) return pg;
+                return scaleItems(pg, [id], f, b.x, b.y, b.x + (b.w * (1 - f)) / 2, b.y + (b.h * (1 - f)) / 2);
+              }, pgIdx)} />}
+            {refine && <RefineEdges file={refine.file} bg={refine.bg} onCancel={() => setRefine(null)} onDone={(c) => applyRefined(refine.id, c)} />}
+            {printerOpen && <SettingsSheet onClose={() => setPrinterOpen(false)} />}
+          </Suspense>
+        )}
         {gridOpen && <PageGrid project={proj} current={pi} onSelect={goPage} onMove={movePage} onAdd={addPage} onDup={() => dupPage(pi)} onDel={() => delPage(pi)} onDupMany={dupPages} onDelMany={delPages} onClose={() => setGridOpen(false)} />}
       </div>
     </EdCtx.Provider>
