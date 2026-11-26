@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Circle, Group, Image as KImage, Layer, Line, Rect, Stage, Text as KText, Transformer } from 'react-konva';
 import Konva from 'konva';
 import type { Frame, FrameBorder, Page, PageImage, PageText, Unit } from './types';
@@ -8,14 +8,14 @@ import { fmt } from './units';
 import { idsInRect } from './arrange';
 import type { Face } from './vision';
 
-const SNAP_PX = 8;
+const SNAP_PX = 12;
 const PT_MM = 25.4 / 72;
 const GUIDE = '#FF2D95';
 const PRIMARY = '#7C5CFF';
 const TEAL = '#14B8A6';
 export const PAGE_HIT = '__page__';
 
-type Guides = { v: number[]; h: number[]; label?: string };
+type Guides = { v: number[]; h: number[]; label?: string; distance?: string };
 type Size = { w: number; h: number };
 type B = { x: number; y: number; w: number; h: number; name?: string };
 type SnapPoint = { at: number; label: string };
@@ -33,7 +33,7 @@ function useVariant(file: string, rot: number, crop = FULL, maxPx = 1400) {
 }
 
 /** Snap a node's bounding box to page centre/edges/margins and other items. Moves the node. */
-function snap(node: Konva.Node, others: B[], S: Size, m: number, movingName: string): Guides {
+function snap(node: Konva.Node, others: B[], S: Size, m: number, movingName: string, tolerance = SNAP_PX): Guides {
   const r = node.getClientRect({ skipStroke: true, skipShadow: true, relativeTo: node.getLayer() ?? undefined });
   const g = snapRect(
     { x: r.x, y: r.y, w: r.width, h: r.height },
@@ -41,13 +41,14 @@ function snap(node: Konva.Node, others: B[], S: Size, m: number, movingName: str
     S,
     m,
     movingName,
+    tolerance,
   );
   node.x(node.x() + g.dx); node.y(node.y() + g.dy);
   return g.guides;
 }
 
 /** Snap a rectangle (page px) to page edges/centre/margins and other items. Returns the shift to apply. */
-function snapRect(r: B, others: B[], S: Size, m: number, movingName: string): { dx: number; dy: number; guides: Guides } {
+function snapRect(r: B, others: B[], S: Size, m: number, movingName: string, tolerance = SNAP_PX): { dx: number; dy: number; guides: Guides } {
   const xs: SnapPoint[] = [
     { at: 0, label: 'page left edge' }, { at: S.w / 2, label: 'page center' }, { at: S.w, label: 'page right edge' },
     { at: m, label: 'left margin' }, { at: S.w - m, label: 'right margin' },
@@ -63,11 +64,11 @@ function snapRect(r: B, others: B[], S: Size, m: number, movingName: string): { 
   };
   others.forEach(addItemPoints);
   const best = (edges: SnapPoint[], cands: SnapPoint[]) => {
-    let d = SNAP_PX + 1, at = 0, edge = '', target = '';
+    let d = tolerance + 1, at = 0, edge = '', target = '';
     for (const e of edges) for (const c of cands) if (Math.abs(c.at - e.at) < Math.abs(d)) {
       d = c.at - e.at; at = c.at; edge = e.label; target = c.label;
     }
-    return Math.abs(d) <= SNAP_PX ? { d, at, label: `${movingName} ${edge} aligned to ${target}` } : null;
+    return Math.abs(d) <= tolerance ? { d, at, label: `${movingName} ${edge} aligned to ${target}` } : null;
   };
   const sx = best(
     [{ at: r.x, label: 'left edge' }, { at: r.x + r.w / 2, label: 'center' }, { at: r.x + r.w, label: 'right edge' }],
@@ -85,11 +86,30 @@ function snapRect(r: B, others: B[], S: Size, m: number, movingName: string): { 
   };
 }
 
+function closestGap(r: B, others: B[], page: Page, S: Size, unit: Unit): string | undefined {
+  const gaps: { mm: number; direction: string; name: string }[] = [];
+  for (const other of others) {
+    const name = other.name ?? 'item';
+    const overlapX = Math.min(r.x + r.w, other.x + other.w) - Math.max(r.x, other.x);
+    const overlapY = Math.min(r.y + r.h, other.y + other.h) - Math.max(r.y, other.y);
+    if (overlapY > 0) {
+      if (r.x + r.w < other.x) gaps.push({ mm: (other.x - r.x - r.w) * page.widthMm / S.w, direction: 'to the right of', name });
+      else if (other.x + other.w < r.x) gaps.push({ mm: (r.x - other.x - other.w) * page.widthMm / S.w, direction: 'to the left of', name });
+    }
+    if (overlapX > 0) {
+      if (r.y + r.h < other.y) gaps.push({ mm: (other.y - r.y - r.h) * page.heightMm / S.h, direction: 'below', name });
+      else if (other.y + other.h < r.y) gaps.push({ mm: (r.y - other.y - other.h) * page.heightMm / S.h, direction: 'above', name });
+    }
+  }
+  const nearest = gaps.sort((a, b) => a.mm - b.mm)[0];
+  return nearest ? `${fmt(nearest.mm, unit)} ${unit} gap ${nearest.direction} ${nearest.name}` : undefined;
+}
+
 interface Ctx {
-  S: Size; kz: number; m: number; unit: Unit; page: Page;
+  S: Size; kz: number; renderZoom: number; m: number; unit: Unit; page: Page;
   selected: Set<string>; adjust: boolean; dropTarget: string | null; border: FrameBorder; cropMarks: boolean;
   reg: (id: string) => (n: Konva.Node | null) => void;
-  pick: (id: string, how: 'tap' | 'drag') => void;
+  pick: (id: string, how: 'tap' | 'drag' | 'longpress') => void;
   dragStart: (id: string) => void;
   dragMove: (id: string, node: Konva.Node) => void;
   dragEnd: (id: string) => void;
@@ -97,6 +117,43 @@ interface Ctx {
   setGuides: (g: Guides) => void;
   faces: Face[]; onPickFace: (i: number) => void; hand: boolean;
   hovered: () => string | null;
+}
+
+function useItemSelection(id: string, c: Ctx) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressed = useRef(false);
+  const touchOrigin = useRef<{ x: number; y: number } | null>(null);
+  const cancel = () => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  useEffect(() => cancel, []);
+  return {
+    click: () => c.pick(id, 'tap'),
+    tap: () => {
+      if (longPressed.current) { longPressed.current = false; return; }
+      c.pick(id, 'tap');
+    },
+    touchStart: (e: Konva.KonvaEventObject<TouchEvent>) => {
+      cancel();
+      if (e.evt.touches.length !== 1) return;
+      const touch = e.evt.touches[0];
+      touchOrigin.current = { x: touch.clientX, y: touch.clientY };
+      longPressed.current = false;
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        longPressed.current = true;
+        c.pick(id, 'longpress');
+      }, 450);
+    },
+    touchMove: (e: Konva.KonvaEventObject<TouchEvent>) => {
+      if (e.evt.touches.length !== 1) { cancel(); return; }
+      const touch = e.evt.touches[0], origin = touchOrigin.current;
+      if (origin && Math.hypot(touch.clientX - origin.x, touch.clientY - origin.y) > 10) cancel();
+    },
+    touchEnd: () => { cancel(); touchOrigin.current = null; },
+    cancel,
+  };
 }
 
 function ImageItem({ im, c, onChange, onSwap }: {
@@ -107,6 +164,7 @@ function ImageItem({ im, c, onChange, onSwap }: {
   const { S, page, unit } = c;
   const img = useVariant(im.file, im.rot, im.crop);
   const start = useRef({ x: 0, y: 0 });
+  const selection = useItemSelection(im.id, c);
   const mmW = page.widthMm / S.w, mmH = page.heightMm / S.h;
   const hud = (n: Konva.Node) => c.setHud(`${fmt(n.width() * n.scaleX() * mmW, unit)} × ${fmt(n.height() * n.scaleY() * mmH, unit)} ${unit}  ·  ${Math.round(n.rotation())}°`);
   const regFn = c.reg(im.id);
@@ -115,8 +173,9 @@ function ImageItem({ im, c, onChange, onSwap }: {
       ref={(n) => { node.current = n; regFn(n); }} image={img ?? undefined}
       x={(im.x + im.w / 2) * S.w} y={(im.y + im.h / 2) * S.h} width={im.w * S.w} height={im.h * S.h}
       offsetX={(im.w * S.w) / 2} offsetY={(im.h * S.h) / 2} rotation={im.angle ?? 0} fill={img ? im.bg : '#C9D3FF'}
-      draggable={!im.locked && !c.hand} onClick={() => c.pick(im.id, 'tap')} onTap={() => c.pick(im.id, 'tap')}
-      onDragStart={(e) => { start.current = { x: e.target.x(), y: e.target.y() }; c.dragStart(im.id); }}
+      draggable={!im.locked && !c.hand} onClick={selection.click} onTap={selection.tap}
+      onTouchStart={selection.touchStart} onTouchMove={selection.touchMove} onTouchEnd={selection.touchEnd}
+      onDragStart={(e) => { selection.cancel(); start.current = { x: e.target.x(), y: e.target.y() }; c.dragStart(im.id); }}
       onDragMove={(e) => { c.dragMove(im.id, e.target); hud(e.target); }}
       onDragEnd={(e) => {
         const n = e.target;
@@ -139,6 +198,7 @@ function ImageItem({ im, c, onChange, onSwap }: {
     />
   );
 }
+const MemoImageItem = memo(ImageItem, (a, b) => a.im === b.im && a.c === b.c);
 
 function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial<Frame>) => void }) {
   const node = useRef<Konva.Group | null>(null);
@@ -149,6 +209,7 @@ function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial
   const fw = f.w * S.w, fh = f.h * S.h;
   const crop = frameCrop(f, page.widthMm, page.heightMm);
   const pan = useRef({ px: 0, py: 0, cx: 0, cy: 0 });
+  const selection = useItemSelection(f.id, c);
   const dropTarget = c.dropTarget === f.id;
   const regFn = c.reg(f.id);
   const prev = useRef(f.file);
@@ -165,8 +226,9 @@ function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial
     <Group
       ref={(n) => { node.current = n; regFn(n); }}
       x={f.x * S.w + fw / 2} y={f.y * S.h + fh / 2} offsetX={fw / 2} offsetY={fh / 2} width={fw} height={fh}
-      draggable={!adjusting && !f.locked && !c.hand} onClick={() => c.pick(f.id, 'tap')} onTap={() => c.pick(f.id, 'tap')}
-      onDragStart={() => c.dragStart(f.id)}
+      draggable={!adjusting && !f.locked && !c.hand} onClick={selection.click} onTap={selection.tap}
+      onTouchStart={selection.touchStart} onTouchMove={selection.touchMove} onTouchEnd={selection.touchEnd}
+      onDragStart={() => { selection.cancel(); c.dragStart(f.id); }}
       onDragMove={(e) => { c.dragMove(f.id, e.target); c.setHud(`${fmt(f.w * page.widthMm, unit)} × ${fmt(f.h * page.heightMm, unit)} ${unit}`); }}
       onDragEnd={() => c.dragEnd(f.id)}
     >
@@ -197,14 +259,14 @@ function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial
           text={f.file ? '…' : `Drop photo\n${fmt(f.w * page.widthMm, unit)}×${fmt(f.h * page.heightMm, unit)} ${unit}`} />
       )}
       {c.cropMarks && img && cropMarkSegments(f.w * page.widthMm, f.h * page.heightMm).map((q, i) => (
-        <Line key={i} points={q.map((v) => v * kz)} stroke="#333" strokeWidth={1} listening={false} />
+        <Line key={i} points={q.map((v) => v * kz)} stroke="#333" strokeWidth={1 / c.renderZoom} listening={false} />
       ))}
       {img && border.on && (() => {
         const r = borderRect(f.w * page.widthMm, f.h * page.heightMm, border.widthMm, border.place);
         return <Rect x={r.x * kz} y={r.y * kz} width={r.w * kz} height={r.h * kz} stroke={border.color} strokeWidth={Math.max(1, border.widthMm * kz)} listening={false} />;
       })()}
       {(dropTarget || !img) && (
-        <Rect width={fw} height={fh} cornerRadius={4} listening={false} stroke={dropTarget ? TEAL : '#B9B4E6'} strokeWidth={dropTarget ? 2.5 : 1.2} dash={img ? undefined : [5, 4]} />
+        <Rect width={fw} height={fh} cornerRadius={4} listening={false} stroke={dropTarget ? TEAL : '#B9B4E6'} strokeWidth={(dropTarget ? 2.5 : 1.2) / c.renderZoom} dash={img ? undefined : [5 / c.renderZoom, 4 / c.renderZoom]} />
       )}
       {adjusting && (
         <>
@@ -225,18 +287,21 @@ function FrameItem({ f, c, onChange }: { f: Frame; c: Ctx; onChange: (p: Partial
     </Group>
   );
 }
+const MemoFrameItem = memo(FrameItem, (a, b) => a.f === b.f && a.c === b.c);
 
 function TextItem({ t, c, onChange }: { t: PageText; c: Ctx; onChange: (p: Partial<PageText>) => void }) {
   const node = useRef<Konva.Text | null>(null);
   const { S, kz, page, unit } = c;
   const mmW = page.widthMm / S.w, mmH = page.heightMm / S.h;
   const regFn = c.reg(t.id);
+  const selection = useItemSelection(t.id, c);
   return (
     <KText
       ref={(n) => { node.current = n; regFn(n); }} text={t.text || ' '} x={t.x * S.w} y={t.y * S.h} rotation={t.angle ?? 0}
       fontSize={t.sizePt * PT_MM * kz} lineHeight={1} fontFamily="Helvetica, Arial, sans-serif" fontStyle={t.bold ? 'bold' : 'normal'} fill={t.color} wrap="none"
-      draggable={!t.locked && !c.hand} onClick={() => c.pick(t.id, 'tap')} onTap={() => c.pick(t.id, 'tap')}
-      onDragStart={() => c.dragStart(t.id)}
+      draggable={!t.locked && !c.hand} onClick={selection.click} onTap={selection.tap}
+      onTouchStart={selection.touchStart} onTouchMove={selection.touchMove} onTouchEnd={selection.touchEnd}
+      onDragStart={() => { selection.cancel(); c.dragStart(t.id); }}
       onDragMove={(e) => { c.dragMove(t.id, e.target); c.setHud(`x ${fmt(e.target.x() * mmW, unit)}  y ${fmt(e.target.y() * mmH, unit)} ${unit}`); }}
       onDragEnd={() => c.dragEnd(t.id)}
       onTransform={(e) => c.setHud(`${Math.round(e.target.rotation())}°`)}
@@ -250,10 +315,11 @@ function TextItem({ t, c, onChange }: { t: PageText; c: Ctx; onChange: (p: Parti
     />
   );
 }
+const MemoTextItem = memo(TextItem, (a, b) => a.t === b.t && a.c === b.c);
 
 export default function PageCanvas(p: {
   page: Page; pageNo: number; pageNumbers: boolean; unit: Unit; selectedIds: string[];
-  onPick: (id: string, how: 'tap' | 'drag') => void; onBlank: () => void;
+  onPick: (id: string, how: 'tap' | 'drag' | 'longpress') => void; onBlank: () => void;
   onMoveMany: (moves: { id: string; x: number; y: number }[]) => void;
   marquee?: boolean; onMarquee?: (ids: string[]) => void;
   onScaleMany: (f: number, ox: number, oy: number, nx: number, ny: number) => void;
@@ -274,6 +340,7 @@ export default function PageCanvas(p: {
   const trRef = useRef<Konva.Transformer>(null);
   const [avail, setAvail] = useState({ w: 300, h: 400 });
   const [zoom, setZoom] = useState(1);
+  const [canvasZoom, setCanvasZoom] = useState(1);
   const [guides, setGuides] = useState<Guides>({ v: [], h: [] });
   const [hud, setHud] = useState('');
   const [mq, setMq] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
@@ -303,14 +370,17 @@ export default function PageCanvas(p: {
   useLayoutEffect(() => {
     const a = anchor.current, el = desk.current;
     if (a && el) { el.scrollLeft = a.fx * el.scrollWidth - a.vx; el.scrollTop = a.fy * el.scrollHeight - a.vy; }
-  }, [zoom]);
+  }, [zoom, canvasZoom]);
 
-  const zoomTo = (z: number, vx?: number, vy?: number) => {
+  const clampZoom = (z: number) => Math.min(5, Math.max(1, z));
+  const zoomTo = (z: number, vx?: number, vy?: number, commit = true) => {
     const el = desk.current!;
-    const nz = Math.min(5, Math.max(1, z));
+    const nz = clampZoom(z);
     const x = vx ?? el.clientWidth / 2, y = vy ?? el.clientHeight / 2;
     anchor.current = { fx: (el.scrollLeft + x) / el.scrollWidth, fy: (el.scrollTop + y) / el.scrollHeight, vx: x, vy: y };
+    zoomRef.current = nz;
     setZoom(nz);
+    if (commit) setCanvasZoom(nz);
   };
 
   // Crop mode: zoom in on the frame being cropped, and back out afterwards.
@@ -318,11 +388,11 @@ export default function PageCanvas(p: {
   const autoZoomed = useRef(false);
   const focusKey = focusFrame ? `${focusFrame.id}|${avail.w}|${avail.h}` : '';
   useEffect(() => {
-    if (!focusFrame) { if (autoZoomed.current) { autoZoomed.current = false; setZoom(1); } return; }
+    if (!focusFrame) { if (autoZoomed.current) { autoZoomed.current = false; setZoom(1); setCanvasZoom(1); } return; }
     const k = Math.max(0.01, Math.min((avail.w - 24) / page.widthMm, (avail.h - 10 - (p.padB ?? 24)) / page.heightMm));
     const fw1 = focusFrame.w * page.widthMm * k, fh1 = focusFrame.h * page.heightMm * k;
     const z = Math.min(5, Math.max(1, Math.min((avail.w - 56) / fw1, (avail.h - 56) / fh1)));
-    autoZoomed.current = true; anchor.current = null; setZoom(z);
+    autoZoomed.current = true; anchor.current = null; setZoom(z); setCanvasZoom(z);
   }, [focusKey]);
   useLayoutEffect(() => {
     const el = desk.current;
@@ -335,6 +405,8 @@ export default function PageCanvas(p: {
   useEffect(() => {
     const el = desk.current!;
     let d0 = 0, z0 = 1, mid0 = { x: 0, y: 0 };
+    let zoomFrame = 0;
+    let pendingZoom: { z: number; x: number; y: number } | null = null;
     const info = (e: TouchEvent) => {
       const a = e.touches[0], b = e.touches[1], r = el.getBoundingClientRect();
       return { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), x: (a.clientX + b.clientX) / 2 - r.left, y: (a.clientY + b.clientY) / 2 - r.top };
@@ -358,24 +430,40 @@ export default function PageCanvas(p: {
       e.preventDefault();
       const i = info(e);
       el.scrollLeft -= i.x - mid0.x; el.scrollTop -= i.y - mid0.y; mid0 = { x: i.x, y: i.y };
-      zoomTo(z0 * (i.d / d0), i.x, i.y);
+      pendingZoom = { z: z0 * (i.d / d0), x: i.x, y: i.y };
+      if (!zoomFrame) zoomFrame = requestAnimationFrame(() => {
+        zoomFrame = 0;
+        const next = pendingZoom; pendingZoom = null;
+        if (next) zoomTo(next.z, next.x, next.y, false);
+      });
     };
-    const end = () => { d0 = 0; pan1.current = null; };
+    const end = () => {
+      if (zoomFrame) { cancelAnimationFrame(zoomFrame); zoomFrame = 0; }
+      if (pendingZoom) { const next = pendingZoom; pendingZoom = null; zoomTo(next.z, next.x, next.y, false); }
+      if (d0) setCanvasZoom(zoomRef.current);
+      d0 = 0; pan1.current = null;
+    };
     el.addEventListener('touchstart', start, { passive: true });
     el.addEventListener('touchmove', move, { passive: false });
     el.addEventListener('touchend', end);
-    return () => { el.removeEventListener('touchstart', start); el.removeEventListener('touchmove', move); el.removeEventListener('touchend', end); };
+    el.addEventListener('touchcancel', end);
+    return () => {
+      if (zoomFrame) cancelAnimationFrame(zoomFrame);
+      el.removeEventListener('touchstart', start); el.removeEventListener('touchmove', move); el.removeEventListener('touchend', end); el.removeEventListener('touchcancel', end);
+    };
   }, []);
 
   useEffect(() => { const c = stageRef.current?.content; if (c) c.style.touchAction = 'none'; }, []);
 
   const padT = 10 + (p.marquee ? 44 : 0), padX = 12, padB = p.padB ?? 24;
   const kFit = Math.max(0.01, Math.min((avail.w - padX * 2) / page.widthMm, (avail.h - padT - padB) / page.heightMm));
-  const kz = kFit * zoom;
+  const kz = kFit * canvasZoom;
   const S = { w: page.widthMm * kz, h: page.heightMm * kz };
+  const viewScale = zoom / canvasZoom;
+  const viewScaleRef = useRef(viewScale); viewScaleRef.current = viewScale;
   const m = page.marginMm * kz;
   const bw = page.border.on ? Math.max(1, page.border.widthMm * kz) : 0;
-  const selected = new Set(selectedIds);
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const boxes = (skip: Set<string>): B[] => [
     ...page.images.filter((i) => !skip.has(i.id)).map((i) => {
@@ -398,8 +486,8 @@ export default function PageCanvas(p: {
     hapticKey.current = (g.v.length || g.h.length) ? key : '';
   };
 
-  const ctx: Ctx = {
-    S, kz, m, unit: p.unit, page, selected, adjust: p.adjust, dropTarget: p.dropTarget ?? hover, border: p.border, cropMarks: p.cropMarks,
+  const ctx = useMemo<Ctx>(() => ({
+    S, kz, renderZoom: canvasZoom, m, unit: p.unit, page, selected, adjust: p.adjust, dropTarget: p.dropTarget ?? hover, border: p.border, cropMarks: p.cropMarks,
     reg, setHud, setGuides, faces: p.faces, onPickFace: p.onPickFace, hand: !!p.hand, hovered: () => hoverRef.current,
     pick: p.onPick,
     dragStart: (id) => {
@@ -422,7 +510,11 @@ export default function PageCanvas(p: {
       }
       if (starts.current.size <= 1) {
         const movingName = page.images.some((i) => i.id === id) ? 'Photo' : page.frames.some((f) => f.id === id) ? 'Frame' : 'Text';
-        const g = snap(node, boxes(new Set([id])), S, m, movingName); haptic(g); setGuides(g); return;
+        const otherBoxes = boxes(new Set([id]));
+        const g = snap(node, otherBoxes, S, m, movingName, SNAP_PX / viewScaleRef.current);
+        const r = node.getClientRect({ skipStroke: true, skipShadow: true, relativeTo: node.getLayer() ?? undefined });
+        const distance = closestGap({ x: r.x, y: r.y, w: r.width, h: r.height }, otherBoxes, page, S, p.unit);
+        haptic(g); setGuides({ ...g, distance }); return;
       }
       const o = starts.current.get(id)!;
       const dx = node.x() - o.x, dy = node.y() - o.y;
@@ -432,9 +524,12 @@ export default function PageCanvas(p: {
       if (rs.length) {
         const x0 = Math.min(...rs.map((q) => q.x)), y0 = Math.min(...rs.map((q) => q.y));
         const x1 = Math.max(...rs.map((q) => q.x + q.width)), y1 = Math.max(...rs.map((q) => q.y + q.height));
-        const g = snapRect({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, boxes(new Set(starts.current.keys())), S, m, 'Selection');
+        const otherBoxes = boxes(new Set(starts.current.keys()));
+        const groupBox = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+        const g = snapRect(groupBox, otherBoxes, S, m, 'Selection', SNAP_PX / viewScaleRef.current);
         if (g.dx || g.dy) for (const sid of starts.current.keys()) { const n = nodes.current.get(sid); if (n) n.position({ x: n.x() + g.dx, y: n.y() + g.dy }); }
-        haptic(g.guides); setGuides(g.guides);
+        haptic(g.guides);
+        setGuides({ ...g.guides, distance: closestGap({ ...groupBox, x: groupBox.x + g.dx, y: groupBox.y + g.dy }, otherBoxes, page, S, p.unit) });
       }
       node.getLayer()?.batchDraw();
     },
@@ -452,7 +547,7 @@ export default function PageCanvas(p: {
       starts.current = new Map();
       if (id !== '__none__' && moves.length) p.onMoveMany(moves);
     },
-  };
+  }), [S.w, S.h, kz, canvasZoom, m, p.unit, page, selectedIds, selected, p.adjust, p.dropTarget, hover, p.border, p.cropMarks, p.faces, p.onPickFace, p.hand, p.onPick, p.onMoveMany, p.onDragging, p.onSnap, p.onChange, p.onChangeText, p.onChangeFrame, p.onSwap]);
 
   // attach the transformer to the selected nodes
   const only = selectedIds.length === 1 ? selectedIds[0] : null;
@@ -462,31 +557,35 @@ export default function PageCanvas(p: {
     const ns = selectedIds.map((id) => nodes.current.get(id)).filter((n): n is Konva.Node => !!n);
     trRef.current?.nodes(ns);
     trRef.current?.getLayer()?.batchDraw();
-  });
+  }, [selectedIds, canvasZoom, S.w, S.h]);
 
   // tell the editor where the selection is, so its toolbar can sit next to it
   const reportBox = () => {
+    if (Math.abs(viewScale - 1) > 0.001) return;
     const stage = stageRef.current, w = wrap.current;
     const ns = selectedIds.map((id) => nodes.current.get(id)).filter((n): n is Konva.Node => !!n);
     if (!stage || !w || !ns.length) { if (lastBox.current !== '') { lastBox.current = ''; p.onSelBox(null); } return; }
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const n of ns) { const r = n.getClientRect({ relativeTo: stage }); x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x + r.width); y1 = Math.max(y1, r.y + r.height); }
     const sr = stage.container().getBoundingClientRect(), wr = w.getBoundingClientRect();
-    const box = { x: sr.left - wr.left + x0, y: sr.top - wr.top + y0, w: x1 - x0, h: y1 - y0 };
+    const box = { x: sr.left - wr.left + x0 * viewScale, y: sr.top - wr.top + y0 * viewScale, w: (x1 - x0) * viewScale, h: (y1 - y0) * viewScale };
     const key = [box.x, box.y, box.w, box.h].map((v) => Math.round(v)).join(',');
     if (key !== lastBox.current) { lastBox.current = key; p.onSelBox(box); }
   };
-  useEffect(() => { reportBox(); });
+  const reportBoxRef = useRef(reportBox);
+  reportBoxRef.current = reportBox;
+  useEffect(() => { reportBox(); }, [selectedIds, canvasZoom, S.w, S.h, avail.w, avail.h, page, p.hand, p.reserve]);
   useEffect(() => {
     const el = desk.current!;
-    el.addEventListener('scroll', reportBox, { passive: true });
-    return () => el.removeEventListener('scroll', reportBox);
-  });
+    const onScroll = () => reportBoxRef.current();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
 
   p.hitRef.current = (cx, cy) => {
     const r = stageRef.current?.container().getBoundingClientRect();
     if (!r) return null;
-    const x = cx - r.left, y = cy - r.top;
+    const x = (cx - r.left) / viewScale, y = (cy - r.top) / viewScale;
     const f = [...page.frames].reverse().find((q) => x >= q.x * S.w && x <= (q.x + q.w) * S.w && y >= q.y * S.h && y <= (q.y + q.h) * S.h);
     if (f) return f.id;
     return x >= 0 && y >= 0 && x <= S.w && y <= S.h ? PAGE_HIT : null;
@@ -520,7 +619,8 @@ export default function PageCanvas(p: {
     <div className="deskwrap" ref={wrap} style={{ marginBottom: p.reserve }}>
       <div className={'desk' + (zoom > 1 ? ' zoomed' : '')} ref={desk}>
         <div style={{ margin: 'auto', padding: `${padT + (p.hand ? 160 : 0)}px ${padX + (p.hand ? 120 : 0)}px ${padB + (p.hand ? 160 : 0)}px` }}>
-          <div style={{ width: S.w, height: S.h, boxShadow: '0 2px 14px rgba(0,0,0,.25)' }}>
+          <div style={{ width: S.w * viewScale, height: S.h * viewScale }}>
+            <div style={{ width: S.w, height: S.h, transform: `scale(${viewScale})`, transformOrigin: 'top left', boxShadow: '0 2px 14px rgba(0,0,0,.25)' }}>
             <Stage ref={stageRef} width={S.w} height={S.h}
               onMouseMove={() => marqueeMove()} onTouchMove={() => marqueeMove()}
               onMouseUp={() => marqueeEnd()} onTouchEnd={() => marqueeEnd()}>
@@ -534,17 +634,17 @@ export default function PageCanvas(p: {
                     if (p.marquee && !p.hand && (e.evt as TouchEvent).touches.length === 1) { const q = e.target.getStage()!.getPointerPosition()!; mqMoved.current = false; setMq({ x0: q.x, y0: q.y, x1: q.x, y1: q.y }); return; }
                     if (t && zoomRef.current > 1) pan1.current = { x: t.clientX, y: t.clientY };
                   }} />
-                {m > 2 && <Rect x={m} y={m} width={S.w - 2 * m} height={S.h - 2 * m} stroke="#8a93a6" dash={[5, 4]} strokeWidth={1} listening={false} />}
-                {page.images.map((im) => <ImageItem key={im.id} im={im} c={ctx} onChange={(pt) => p.onChange(im.id, pt)} onSwap={(b, cx, cy) => p.onSwap(im.id, b, cx, cy)} />)}
-                {page.frames.map((f) => <FrameItem key={f.id} f={f} c={ctx} onChange={(pt) => p.onChangeFrame(f.id, pt)} />)}
+                {m > 2 && <Rect x={m} y={m} width={S.w - 2 * m} height={S.h - 2 * m} stroke="#8a93a6" dash={[5 / canvasZoom, 4 / canvasZoom]} strokeWidth={1 / canvasZoom} listening={false} />}
+                {page.images.map((im) => <MemoImageItem key={im.id} im={im} c={ctx} onChange={(pt) => p.onChange(im.id, pt)} onSwap={(b, cx, cy) => p.onSwap(im.id, b, cx, cy)} />)}
+                {page.frames.map((f) => <MemoFrameItem key={f.id} f={f} c={ctx} onChange={(pt) => p.onChangeFrame(f.id, pt)} />)}
                 {bw > 0 && <Rect x={bw / 2} y={bw / 2} width={S.w - bw} height={S.h - bw} stroke={page.border.color} strokeWidth={bw} listening={false} />}
-                {page.texts.map((t) => <TextItem key={t.id} t={t} c={ctx} onChange={(pt) => p.onChangeText(t.id, pt)} />)}
+                {page.texts.map((t) => <MemoTextItem key={t.id} t={t} c={ctx} onChange={(pt) => p.onChangeText(t.id, pt)} />)}
                 {p.pageNumbers && <KText text={String(p.pageNo)} x={0} width={S.w} align="center" y={S.h - 8 * kz - 0.85 * pnSize} fontSize={pnSize} lineHeight={1} fontFamily="Helvetica, Arial, sans-serif" fill="#333" listening={false} />}
               </Layer>
               <Layer>
-                {guides.v.map((x) => <Line key={'v' + x} points={[x, 0, x, S.h]} stroke={GUIDE} strokeWidth={1} dash={[6, 4]} listening={false} />)}
-                {guides.h.map((y) => <Line key={'h' + y} points={[0, y, S.w, y]} stroke={GUIDE} strokeWidth={1} dash={[6, 4]} listening={false} />)}
-                {mq && <Rect x={Math.min(mq.x0, mq.x1)} y={Math.min(mq.y0, mq.y1)} width={Math.abs(mq.x1 - mq.x0)} height={Math.abs(mq.y1 - mq.y0)} stroke={PRIMARY} strokeWidth={1.5} dash={[6, 4]} fill="rgba(124,92,255,.08)" listening={false} />}
+                {guides.v.map((x) => <Line key={'v' + x} points={[x, 0, x, S.h]} stroke={GUIDE} strokeWidth={1 / canvasZoom} dash={[6 / canvasZoom, 4 / canvasZoom]} listening={false} />)}
+                {guides.h.map((y) => <Line key={'h' + y} points={[0, y, S.w, y]} stroke={GUIDE} strokeWidth={1 / canvasZoom} dash={[6 / canvasZoom, 4 / canvasZoom]} listening={false} />)}
+                {mq && <Rect x={Math.min(mq.x0, mq.x1)} y={Math.min(mq.y0, mq.y1)} width={Math.abs(mq.x1 - mq.x0)} height={Math.abs(mq.y1 - mq.y0)} stroke={PRIMARY} strokeWidth={1.5 / canvasZoom} dash={[6 / canvasZoom, 4 / canvasZoom]} fill="rgba(124,92,255,.08)" listening={false} />}
                 <Transformer
                   ref={trRef} rotateEnabled={canRotate} resizeEnabled={canResize} keepRatio flipEnabled={false}
                   enabledAnchors={canResize ? ['top-left', 'top-right', 'bottom-left', 'bottom-right'] : []}
@@ -556,16 +656,20 @@ export default function PageCanvas(p: {
                     if (Math.abs(f - 1) < 0.002) return;
                     p.onScaleMany(f, g.x / S.w, g.y / S.h, t.x() / S.w, t.y() / S.h);
                   }}
-                  rotationSnaps={[0, 90, 180, 270]} rotationSnapTolerance={6} rotateAnchorOffset={26}
-                  anchorSize={22} anchorCornerRadius={11} anchorStroke={PRIMARY} anchorFill="#fff" borderStroke={PRIMARY} borderDash={locked ? [4, 3] : undefined}
-                  padding={onlyText ? 4 : 0} boundBoxFunc={(o, n) => (n.width < 20 || n.height < 20 ? o : n)}
+                  rotationSnaps={[0, 90, 180, 270]} rotationSnapTolerance={6}
+                  anchorSize={22 / canvasZoom} anchorCornerRadius={11 / canvasZoom} anchorStroke={PRIMARY} anchorFill="#fff" borderStroke={PRIMARY} borderDash={locked ? [4 / canvasZoom, 3 / canvasZoom] : undefined}
+                  rotateAnchorOffset={26 / canvasZoom} padding={onlyText ? 4 / canvasZoom : 0} boundBoxFunc={(o, n) => (n.width < 20 / canvasZoom || n.height < 20 / canvasZoom ? o : n)}
                 />
               </Layer>
             </Stage>
+            </div>
           </div>
         </div>
       </div>
-      {guides.label && <div className="snap-feedback">{guides.label}</div>}
+      {(guides.label || guides.distance) && <div className="snap-feedback">
+        {guides.label && <span>{guides.label}</span>}
+        {guides.distance && <span className="snap-distance">{guides.distance}</span>}
+      </div>}
       {p.children}
       {hud && <div className="hud">{hud}</div>}
       <div className="zoomctl">

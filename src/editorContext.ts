@@ -60,7 +60,8 @@ export interface Ed {
   setBox: (id: string, b: Partial<{ x: number; y: number; w: number; h: number }>) => void;
   setSel: (ids: string[]) => void;
   openPrinter: () => void;
-  align: (m: AlignMode) => void; distribute: (axis: 'x' | 'y') => void; order: (to: 'front' | 'back') => void;
+  align: (m: AlignMode) => void; alignGroupToPage: (m: AlignMode) => void;
+  distribute: (axis: 'x' | 'y') => void; order: (to: 'front' | 'back') => void;
   // pages
   addPage: () => void; dupPage: (i: number) => void; delPage: (i: number) => void; movePage: (f: number, t: number) => void; goPage: (i: number) => void;
   openGrid: () => void;

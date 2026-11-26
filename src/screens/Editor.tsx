@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Crop, Frame, LayoutId, Page, PageImage, PageText, Project, TrayItem } from '../types';
 import { filesUsedElsewhere, listProjects, newPage, saveProject } from '../storage';
 import { applyLayout, cellCount, gridBox, LAYOUTS, cellRect, clampFrame, cropToAspect, dispAspect, emptyFrame, fillFrames, fillPage, frameCrop, freeBox, freeSpot, rotateCrop } from '../layout';
-import { alignItems, distributeItems, findItem, gapItems, fillGrid, groupBox, mapSelected, reorder, scaleItems, selectWhere, setBoxMm, type SelectMode, type AlignMode, type AnyItem } from '../arrange';
+import { alignItems, alignGroupToPage as moveGroupToPage, distributeItems, findItem, gapItems, fillGrid, groupBox, mapSelected, reorder, scaleItems, selectWhere, setBoxMm, type SelectMode, type AlignMode, type AnyItem } from '../arrange';
 import { deleteImages, enhanceFile, evenLight as evenLightFile, FULL, importImage, makeCutout, newId, upscaleFile } from '../images';
 import RefineEdges from '../RefineEdges';
 import { faceFit, findFaces, mainFace, type Face } from '../vision';
@@ -582,6 +582,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     snapIntoFrame(imgId, target.id);
   };
   const align = (m: AlignMode) => editPage((pg) => alignItems(pg, selIds, m));
+  const alignGroupToPage = (m: AlignMode) => editPage((pg) => moveGroupToPage(pg, selIds, m));
   const distribute = (axis: 'x' | 'y') => editPage((pg) => distributeItems(pg, selIds, axis));
   const order = (to: 'front' | 'back') => { if (selIds.length === 1) editPage((pg) => reorder(pg, selIds[0], to)); };
   const moveMany = (moves: { id: string; x: number; y: number }[]) => {
@@ -593,7 +594,13 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
       texts: pg.texts.map((t) => (m.has(t.id) ? { ...t, x: m.get(t.id)!.x, y: m.get(t.id)!.y } : t)),
     }));
   };
-  const onPick = (pid: string, how: 'tap' | 'drag') => {
+  const onPick = (pid: string, how: 'tap' | 'drag' | 'longpress') => {
+    if (how === 'longpress') {
+      setMulti(true);
+      setSel((s) => (s.includes(pid) ? s : [...s, pid]));
+      setPanel('select');
+      return;
+    }
     if (how === 'drag') { setSel((s) => (s.includes(pid) ? s : [pid])); return; }
     const now = Date.now();
     if (lastTap.current.id === pid && now - lastTap.current.t < 250) return;
@@ -664,7 +671,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
     placePhoto, updateFrame: (fid, patch) => updateFrame(fid, patch), resizeFrame, rotateFrame, copyToAll,
     detach, sameAll, setSameAll, adjust, setAdjust, autoFace, setAutoFace, centerFace: (fid) => { centerFace(fid); }, removeBackground: (i) => { removeBackground(i); }, refineEdges, evenLight, enhancePhoto, upscalePhoto, setBgAll, setBg,
     rotateImage, setCropSide, resetCrop, fillCell, fitCell, addText, updateText, setLayout, relayout, fillWith, applyTemplate,
-    deleteSel, duplicateSel, toggleLock, scaleSel, selectMany, selectBy, fillGridSel, setBox, setSel, openPrinter: () => setPrinterOpen(true), align, distribute, order, setGap, selectAll, fitIntoFrame,
+    deleteSel, duplicateSel, toggleLock, scaleSel, selectMany, selectBy, fillGridSel, setBox, setSel, openPrinter: () => setPrinterOpen(true), align, alignGroupToPage, distribute, order, setGap, selectAll, fitIntoFrame,
     addPage, dupPage, delPage, movePage, goPage, openGrid: () => setGridOpen(true),
   };
 
@@ -723,7 +730,7 @@ export default function Editor({ id, onBack, initialTab }: { id: string; onBack:
             return (
               <>
               <div className="chip-hint">
-                {selIds.length ? <b>{selIds.length} of {total} selected</b> : 'Tap items to select them'}
+                {selIds.length ? <b>{selIds.length} of {total} selected</b> : 'Tap items to add or remove; long-press to start'}
                 {selIds.length > 0 && <button onClick={() => setSel([])}>Clear</button>}
               </div>
               </>

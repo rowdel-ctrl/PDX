@@ -7,6 +7,7 @@ import { enhancePreview, pixelSize } from './images';
 import { AUTO, NEUTRAL, isNeutral, type Adjust } from './enhance';
 import { canUpscale } from './upscale';
 import { frameCrop } from './layout';
+import { isLocked } from './arrange';
 import { AlignB, AlignC, AlignL, AlignM, AlignR, AlignT, Copy, DistH, DistV, Face, Layers, Sparkle, Wand } from './icons';
 
 export const ID_COLORS: [string, string][] = [['#FFFFFF', 'White'], ['#2F6FD6', 'Blue'], ['#C62828', 'Red'], ['#9CC4EE', 'Sky']];
@@ -76,6 +77,7 @@ export function ArrangePanel() {
   const ed = useEd();
   const n = ed.sel.length;
   const { selImage: im, selFrame: fr } = ed;
+  const groupHasLock = n > 1 && ed.sel.some((id) => isLocked(ed.page, id));
   const [gx, setGx] = useState(ed.page.spacingMm), [gy, setGy] = useState(ed.page.spacingMm);
   if (!n) return <div className="panel-body"><p className="muted small" style={{ margin: 0 }}>Select something to arrange it.</p></div>;
   return (
@@ -86,6 +88,15 @@ export function ArrangePanel() {
           {ALIGN.map(([ic, label, m]) => <button key={m} aria-label={label} onClick={() => ed.align(m)}>{ic}</button>)}
         </div>
       </div>
+      {n > 1 && (
+        <div className="field">Align group to page
+          <div className="alignrow">
+            {ALIGN.map(([ic, label, m]) => <button key={m} aria-label={`${label} for group`} disabled={groupHasLock} onClick={() => ed.alignGroupToPage(m)}>{ic}</button>)}
+          </div>
+          <span className="muted small">Moves the selection together and keeps the spacing between items.</span>
+          {groupHasLock && <span className="muted small">Unlock all selected items to move the group.</span>}
+        </div>
+      )}
       {n === 1 && (
         <div className="row2">
           <button className="btn" onClick={() => ed.order('front')}><Layers /> Bring to front</button>
@@ -156,7 +167,7 @@ export function SelectPanel() {
   ];
   return (
     <div className="panel-body">
-      <p className="muted small" style={{ margin: 0 }}>{sel.length ? `${sel.length} of ${total} selected.` : 'Tap items on the page, or draw a box around them.'}</p>
+      <p className="muted small" style={{ margin: 0 }}>{sel.length ? `${sel.length} of ${total} selected.` : 'Tap items to add or remove them. Long-press an item to start selecting.'}</p>
       <div className="chips">
         {chips.filter(([, c]) => c > 0).map(([l, c, on]) => <button key={l} className="chip" onClick={on}>{l} · {c}</button>)}
         {sel.length > 0 && <button className="chip" onClick={() => ed.selectBy('same')}>Same size as first</button>}

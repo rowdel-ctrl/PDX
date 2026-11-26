@@ -96,6 +96,21 @@ export function alignItems(page: Page, ids: string[], mode: AlignMode): Page {
   return mapSelected(page, new Set(delta.keys()), (_k, item) => { const d = delta.get((item as { id: string }).id)!; return shifted(item, page, d[0], d[1]); });
 }
 
+/** Move a selection as one group to a page edge or centre, preserving its internal spacing. */
+export function alignGroupToPage(page: Page, ids: string[], mode: AlignMode): Page {
+  if (ids.length < 2 || ids.some((id) => !findItem(page, id) || isLocked(page, id))) return page;
+  const b = groupBox(page, ids);
+  if (!b) return page;
+  let dx = 0, dy = 0;
+  if (mode === 'left') dx = -b.x * page.widthMm;
+  if (mode === 'center') dx = (0.5 - (b.x + b.w / 2)) * page.widthMm;
+  if (mode === 'right') dx = (1 - (b.x + b.w)) * page.widthMm;
+  if (mode === 'top') dy = -b.y * page.heightMm;
+  if (mode === 'middle') dy = (0.5 - (b.y + b.h / 2)) * page.heightMm;
+  if (mode === 'bottom') dy = (1 - (b.y + b.h)) * page.heightMm;
+  return mapSelected(page, new Set(ids), (_kind, item) => shifted(item, page, dx, dy));
+}
+
 /** Equal gaps between three or more items. */
 export function distributeItems(page: Page, ids: string[], axis: 'x' | 'y'): Page {
   const refs = ids.map((id) => findItem(page, id)).filter((r): r is { kind: Kind; item: AnyItem } => !!r && !(r.item as { locked?: boolean }).locked);

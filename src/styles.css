@@ -82,7 +82,8 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .desk{position:absolute;inset:0;overflow:auto;display:flex;touch-action:none}
 .desk.zoomed{touch-action:pan-x pan-y}
 .hud{position:absolute;left:50%;top:8px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:6px 12px;border-radius:12px;font-family:var(--body);font-size:12px;font-weight:500;white-space:nowrap;pointer-events:none;z-index:4}
-.snap-feedback{position:absolute;left:50%;top:44px;transform:translateX(-50%);max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:6px 10px;border:1px solid rgba(255,45,149,.24);border-radius:12px;background:var(--card);color:#9e1d61;font-family:var(--body);font-size:11px;font-weight:600;box-shadow:0 3px 12px rgba(30,20,30,.12);pointer-events:none;z-index:6}
+.snap-feedback{position:absolute;left:50%;top:44px;transform:translateX(-50%);max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis;white-space:normal;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 10px;border:1px solid rgba(255,45,149,.24);border-radius:12px;background:var(--card);color:#9e1d61;font-family:var(--body);font-size:11px;font-weight:600;box-shadow:0 3px 12px rgba(30,20,30,.12);pointer-events:none;z-index:6;text-align:center}
+.snap-distance{font-size:10px;font-weight:500;color:var(--sub)}
 .zoomctl{position:absolute;right:8px;top:8px;display:flex;background:var(--glass);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:12px;overflow:hidden;z-index:4}
 .zoomctl button{min-width:36px;min-height:36px;border:0;background:none;font-size:18px;font-weight:500;color:var(--text)}
 .zoomctl .zval{font-size:11px;min-width:48px}
@@ -351,12 +352,15 @@ h2.sec{font-family:var(--head);font-size:18px;line-height:26px;font-weight:500;m
 .four-col .box{height:42px;padding:0 8px;font-size:14px}
 .four-col .field{gap:4px}
 .nudge-row{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500}
-.nudge-row>span{flex:none}
+.nudge-step{display:flex;flex-direction:column;gap:3px;flex:none}
+.nudge-step .seg{gap:2px}
+.nudge-step .seg button{min-height:26px;padding:2px 6px;font-size:10px}
 .nudge-row .nudge{flex:1}
 .nudge-row .nudge button{height:40px}
 .alignrow{display:flex;gap:6px}
 .alignrow button{flex:1;height:44px;border:0;border-radius:12px;background:var(--accent-soft);color:var(--accent-text);display:grid;place-items:center}
 .alignrow button:active{background:var(--accent);color:var(--on-accent)}
+.alignrow button:disabled{opacity:.42;cursor:not-allowed}
 
 /* Bottom bar for a selected item */
 .dock-in.ctx{height:68px;width:calc(100% - 20px);max-width:520px;padding:0 4px 0 6px;gap:2px;border-radius:26px}

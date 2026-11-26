@@ -51,6 +51,7 @@ export function ExactForm() {
   const b = it ? groupBox(ed.page, [id]) : null;
   const isText = it?.kind === 'text';
   const [unit, setUnit] = useState<Unit>(ed.unit);
+  const [nudgeStep, setNudgeStep] = useState(1);
   const [keep, setKeep] = useState(true);
   const mm = b ? { x: b.x * ed.page.widthMm, y: b.y * ed.page.heightMm, w: b.w * ed.page.widthMm, h: b.h * ed.page.heightMm } : { x: 0, y: 0, w: 0, h: 0 };
   const [txt, setTxt] = useState<Record<string, string>>({});
@@ -69,7 +70,7 @@ export function ExactForm() {
       ed.setBox(id, keep ? (k === 'w' ? { w: val, h: val / r } : { h: val, w: val * r }) : { [k]: val });
     } else ed.setBox(id, { [k]: val });
   };
-  const nudge = (dx: number, dy: number) => ed.setBox(id, { x: mm.x + dx, y: mm.y + dy });
+  const nudge = (dx: number, dy: number) => ed.setBox(id, { x: mm.x + dx * nudgeStep, y: mm.y + dy * nudgeStep });
   const val = (k: 'x' | 'y' | 'w' | 'h') => txt[k] ?? field(mm[k], unit);
   const F = ({ k, label, off }: { k: 'x' | 'y' | 'w' | 'h'; label: string; off?: boolean }) => (
     <label className="field">{label}
@@ -89,7 +90,13 @@ export function ExactForm() {
     </div>
     {!isText && <Switch label="Keep proportions" checked={keep} onChange={setKeep} />}
     {rotated && <p className="muted small" style={{ margin: 0 }}>This photo is turned, so the box shown is its outline. Size changes apply to the photo itself.</p>}
-    <div className="nudge-row"><span>Nudge 1 mm</span>
+    <div className="nudge-row">
+      <div className="nudge-step"><span>Nudge</span>
+        <div className="seg">
+          <button className={nudgeStep === 1 ? 'on' : ''} aria-pressed={nudgeStep === 1} onClick={() => setNudgeStep(1)}>1 mm</button>
+          <button className={nudgeStep === 0.1 ? 'on' : ''} aria-pressed={nudgeStep === 0.1} onClick={() => setNudgeStep(0.1)}>0.1 mm</button>
+        </div>
+      </div>
       <div className="nudge">
         <button aria-label="Nudge left" onClick={() => nudge(-1, 0)}>‹</button>
         <button aria-label="Nudge up" onClick={() => nudge(0, -1)}>⌃</button>
